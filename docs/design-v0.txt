@@ -1,0 +1,1155 @@
+Project Tavern V0 完整产品设计与开发执行书 版本：V0.1 日期：2026-09-15
+
+============================================================
+一、项目总览
+============================================================
+
+1.  产品定位
+
+Project Tavern 是一个 Android 优先的跨模型 AI Character / RPG Client。
+
+核心理念： Bring your own AI. Bring your own world.
+
+用户自己提供第三方 AI API Key，App 本身不提供 AI 推理、不提供模型、不做
+API 中转代理。
+
+App 负责： - Character 管理 - World Book 管理 - Story / RPG 管理 -
+Chat - Generation - Branch - Memory - Prompt 构建 - Context 管理 -
+多模型 Provider - 本地数据管理 - Import / Export
+
+V0
+不开放社区，不提供公共或个人社区内容发布能力，只保留表面入口和未来架构占位。
+
+2.  V0 产品原则
+
+第一： AI 是用户自己的，Tavern 是用户控制 AI 的工具。
+
+第二： Character、World、Story、Memory、Chat 必须解耦。
+
+第三： 本地优先，V0 尽量不依赖自己的后端。
+
+第四： V0 宁可少做，也不要破坏核心架构。
+
+第五： 社区、商城、账号、云同步等全部延后。
+
+============================================================ 二、V0
+功能边界 ============================================================
+
+必须做：
+
+Character： - 创建 - 编辑 - 删除 - 复制 - JSON 导入 - PNG Character Card
+导入 - JSON 导出 - PNG 导出 - 多 Greeting - Character Version - 默认所属
+World Book
+
+World： - World Book - World Book Entry - Key / Secondary Key -
+Priority - Constant - Probability - Insertion Position - Enabled - Test
+/ Preview
+
+Story： - 创建长期故事 - 主角 - Companion - NPC - Story World Book -
+Story Memory - Story Chat
+
+Chat： - Streaming - Stop - Edit - Delete - Regenerate - Generation -
+Branch - Branch 切换
+
+AI： - BYOK - OpenAI - xAI - Google - OpenAI-Compatible - API Profile -
+安全存储 API Key
+
+Prompt： - Prompt Builder - Prompt Pipeline - Context Manager - Token
+Budget - Prompt Debugger
+
+Memory： - Chat Summary - 手动编辑 - AI Summary
+
+Data： - Local Database - Backup - Restore
+
+明确不做：
+
+-   公共社区
+-   个人社区
+-   用户主页
+-   评论
+-   点赞
+-   关注
+-   排行榜
+-   推荐
+-   创作者中心
+-   商城
+-   角色售卖
+-   支付
+-   订阅
+-   广告
+-   账号系统
+-   云同步
+-   自有 AI 服务
+-   API Proxy
+-   自有模型
+
+============================================================
+三、平台与技术栈
+============================================================
+
+V0： Android
+
+V1： Windows
+
+V2： iOS
+
+推荐技术：
+
+Kotlin Jetpack Compose Material 3 Room DataStore Kotlin Serialization
+Ktor / OkHttp Android Keystore Coroutines Flow
+
+架构：
+
+Feature-based Architecture + MVVM / Unidirectional Data Flow +
+Repository Pattern + 独立 Engine + Provider Abstraction
+
+============================================================
+四、项目目录
+============================================================
+
+project-tavern/
+
+├── app/ │ ├── core/ │ ├── common/ │ ├── model/ │ ├── database/ │ ├──
+network/ │ ├── security/ │ └── ui/ │ ├── feature/ │ ├── chat/ │ ├──
+character/ │ ├── worldbook/ │ ├── story/ │ ├── memory/ │ ├── preset/ │
+├── provider/ │ ├── settings/ │ └── community/ │ ├── engine/ │ ├──
+prompt/ │ ├── context/ │ ├── generation/ │ ├── branching/ │ ├── memory/
+│ └── tokenizer/ │ └── provider/ ├── openai/ ├── xai/ ├── google/ └──
+compatible/
+
+community 模块 V0 只保留占位，不实现实际社区业务。
+
+============================================================
+五、核心概念模型
+============================================================
+
+整个系统关系：
+
+Character | +—- World Book | +—- Story | +—- Main Character +—-
+Companion +—- NPC | +—- World Books +—- Memory +—- Chats
+
+Chat | +—- Messages | +—- Generations | +—- Branches
+
+最重要的新增设计：
+
+Character 与 World Book 是多对多关系。
+
+Character 可以有一个默认世界，也可以属于多个世界。
+
+Story 是长期故事 / RPG 存档。
+
+Story Participant 负责决定某个 Character 在当前故事中的身份。
+
+============================================================
+六、Character 系统
+============================================================
+
+1.  Character Model
+
+Character：
+
+-   id
+-   name
+-   avatar
+-   description
+-   personality
+-   scenario
+-   firstMessage
+-   alternateGreetings[]
+-   exampleDialogues[]
+-   systemPrompt
+-   creatorNotes
+-   tags[]
+-   createdAt
+-   updatedAt
+
+2.  Character Version
+
+CharacterVersion：
+
+-   id
+-   characterId
+-   version
+-   snapshot
+-   createdAt
+
+Chat 创建时记录 Character Version。
+
+修改 Character 后创建新 Version。
+
+旧 Chat 使用旧 Version，新 Chat 使用新 Version。
+
+3.  Character 与 World Book
+
+不要使用：
+
+character.worldBookId
+
+而使用中间关系：
+
+CharacterWorldBook：
+
+-   characterId
+-   worldBookId
+-   isDefault
+
+因此：
+
+Alice ├── Fantasy World ★ Default ├── Modern World └── Sci-Fi World
+
+同一个角色可以被放进多个世界。
+
+4.  Character Card Import
+
+支持：
+
+-   PNG
+-   JSON
+
+流程：
+
+外部格式 -> Parser -> Internal Character Model
+
+App 内部所有功能只依赖 Internal Character Model。
+
+导出：
+
+-   JSON
+-   PNG
+
+5.  Character 编辑器
+
+Basic： - Name - Avatar - Tags
+
+Character： - Description - Personality - Scenario
+
+Messages： - First Message - Alternate Greetings - Example Dialogues
+
+Advanced： - System Prompt - Creator Notes
+
+============================================================ 七、World
+Book ============================================================
+
+WorldBook：
+
+-   id
+-   name
+-   description
+-   createdAt
+-   updatedAt
+
+WorldBookEntry：
+
+-   id
+-   worldBookId
+-   name
+-   keys[]
+-   secondaryKeys[]
+-   content
+-   priority
+-   enabled
+-   constant
+-   probability
+-   insertionPosition
+-   createdAt
+-   updatedAt
+
+触发流程：
+
+当前上下文 -> Key Matching -> Entry 筛选 -> Priority 排序 -> Token
+Budget -> Prompt Injection
+
+Constant Entry：
+
+constant = true
+
+不需要关键词，每次生成都激活。
+
+Priority：
+
+Priority 越高，越优先保留。
+
+Context 超限时，低 Priority Entry 优先被移除。
+
+V0 必须提供 Entry Test：
+
+输入一段文字：
+
+“我准备前往帝国首都。”
+
+显示：
+
+Matched Entries - Empire - Capital
+
+并显示最终实际注入内容。
+
+============================================================ 八、Story /
+长期 RPG 系统
+============================================================
+
+这是对原架构的重要升级。
+
+Story 是一个长期故事容器。
+
+例如：
+
+我的冒险 | ├── 主角：Aliang ├── Companion：Alice ├── Companion：Bob ├──
+NPC ├── World Book ├── Memory └── Chats
+
+Story Model：
+
+-   id
+-   name
+-   description
+-   mainCharacter
+-   createdAt
+-   updatedAt
+
+StoryParticipant：
+
+-   id
+-   storyId
+-   characterId
+-   role
+-   enabled
+-   priority
+-   settings
+
+role：
+
+MAIN_CHARACTER COMPANION NPC
+
+============================================================ 九、永久
+Companion 系统
+============================================================
+
+用户可以把 Character 单独带进 Story。
+
+例如：
+
+Alice 原本属于： Fantasy World
+
+用户创建：
+
+我的冒险
+
+选择：
+
+Alice -> 永久陪伴
+
+于是：
+
+Story | +– Main Character | +– Alice [COMPANION]
+
+Companion 不意味着每次请求都发送完整 Character Card。
+
+Context Engine 根据当前场景决定：
+
+-   是否激活
+-   激活程度
+-   使用多少上下文
+-   是否需要完整设定
+
+例如当前正在和国王谈判：
+
+Alice 可能只需要作为“当前陪同角色”存在。
+
+当用户开始与 Alice 对话时：
+
+提高 Alice 的 Context 权重， 必要时加载更多 Character 信息。
+
+V0 的简化实现：
+
+每个 Companion 有：
+
+-   enabled
+-   priority
+
+并在 Prompt Builder 中生成简化 Companion Context。
+
+未来再加入： - Location - Relationship - Status - Activity - Dynamic
+Memory
+
+============================================================ 十、Chat
+数据结构 ============================================================
+
+Conversation：
+
+-   id
+-   storyId
+-   characterId
+-   characterVersionId
+-   worldBookIds[]
+-   presetId
+-   title
+-   createdAt
+-   updatedAt
+
+Message：
+
+-   id
+-   conversationId
+-   parentMessageId
+-   role
+-   content
+-   createdAt
+-   position
+
+Generation：
+
+-   id
+-   messageId
+-   content
+-   model
+-   provider
+-   generationParameters
+-   tokenUsage
+-   createdAt
+
+结构：
+
+Message ├── Generation 1 ├── Generation 2 └── Generation 3
+
+Regenerate 不删除旧 Generation。
+
+============================================================
+十一、Branch 分支系统
+============================================================
+
+结构：
+
+A | B | C +– D | +– E | +– D’ +– E’
+
+Message 使用 parentMessageId 构建树。
+
+用户可以：
+
+长按消息 -> Branch from here
+
+创建新剧情线。
+
+原剧情完整保留。
+
+Branch UI：
+
+当前分支：2 / 4
+
+支持： - 切换 - 新建 - 删除 - 重命名（可选） - 查看分支起点
+
+============================================================
+十二、Prompt Engine
+============================================================
+
+所有 API 请求必须经过：
+
+Chat -> Context Builder -> Prompt Builder -> Provider -> AI API
+
+PromptBlock：
+
+-   type
+-   content
+-   priority
+-   position
+-   tokenEstimate
+-   enabled
+
+类型：
+
+SYSTEM GLOBAL CHARACTER WORLD COMPANION MEMORY EXAMPLE HISTORY USER
+
+默认 Pipeline：
+
+SYSTEM GLOBAL PROMPT CHARACTER SYSTEM CHARACTER DESCRIPTION PERSONALITY
+SCENARIO EXAMPLE DIALOGUES WORLD BOOK COMPANION CONTEXT MEMORY CHAT
+HISTORY USER MESSAGE
+
+V0 可以固定顺序。
+
+架构必须允许以后拖动调整。
+
+============================================================
+十三、Context Manager
+============================================================
+
+Context Manager 负责：
+
+-   Context Limit
+-   Token Estimate
+-   History 截断
+-   World Book 截断
+-   Memory 保留
+-   Response Budget
+
+示例：
+
+Context Limit = 32K
+
+System 2K Character 3K World 4K Memory 2K History 16K Response 5K
+
+优先保留：
+
+1.  System
+2.  Current User Message
+3.  Character Core
+4.  Memory
+5.  World Book
+6.  Recent History
+7.  Old History
+
+旧 History：
+
+Recent History 保持完整。
+
+更早内容进入 Summary。
+
+============================================================
+十四、Memory
+============================================================
+
+V0 只实现：
+
+Chat Summary
+
+Memory：
+
+-   id
+-   conversationId / storyId
+-   type
+-   content
+-   updatedAt
+
+V0 type：
+
+CHAT_SUMMARY
+
+用户可以：
+
+-   查看
+-   编辑
+-   删除
+-   Generate Summary
+
+Generate Summary 使用用户自己的 API。
+
+未来预留：
+
+Character Memory World Memory Long-term Memory Relationship Memory
+
+============================================================
+十五、Provider 系统
+============================================================
+
+Chat 不允许直接调用具体厂商。
+
+统一：
+
+Provider Interface
+
+包含：
+
+-   validate()
+-   listModels()
+-   generate()
+-   stream()
+
+V0 Provider：
+
+-   OpenAI
+-   xAI
+-   Google
+-   OpenAI-Compatible
+
+OpenAI-Compatible：
+
+-   Endpoint
+-   API Key
+-   Model
+
+统一错误：
+
+INVALID_KEY UNAUTHORIZED RATE_LIMIT TIMEOUT NETWORK_ERROR
+MODEL_NOT_FOUND CONTEXT_TOO_LONG SERVER_ERROR UNKNOWN
+
+============================================================ 十六、API
+Profile ============================================================
+
+ApiProfile：
+
+-   id
+-   name
+-   provider
+-   endpoint
+-   model
+-   encryptedApiKey
+-   createdAt
+-   updatedAt
+
+API Key：
+
+不得出现在： - 普通数据库明文 - 日志 - Analytics - Crash Report - Backup
+
+Android：
+
+Android Keystore + Encrypted Storage
+
+原则：
+
+API Key 属于用户，不属于 Project Tavern。
+
+============================================================
+十七、Preset
+============================================================
+
+Preset 是模型生成行为配置。
+
+Preset：
+
+-   id
+-   name
+-   providerId
+-   model
+-   temperature
+-   topP
+-   maxTokens
+-   frequencyPenalty
+-   presencePenalty
+-   systemPrompt
+-   contextLimit
+-   responseBudget
+
+例：
+
+Novel Mode Creative Mode Fast Mode Reasoning Mode
+
+Character、Story、Chat 不直接硬编码模型参数。
+
+============================================================ 十八、Chat
+UI ============================================================
+
+设计目标：
+
+小说阅读感，而非普通聊天软件。
+
+消息示例：
+
+Alice
+
+她推开酒馆的大门。
+
+“你终于来了。”
+
+她看向你。
+
+长按菜单：
+
+Copy Edit Regenerate Branch from here Delete
+
+Assistant：
+
+Generation 2 / 4
+
+< >
+
+输入框：
+
+-   多行
+-   Send
+-   Stop
+-   Edit
+
+生成过程中：
+
+Stop
+
+点击后取消 Stream。
+
+已经收到的内容保留。
+
+============================================================
+十九、Character UI
+============================================================
+
+Characters
+
+[ Search ] [ + ]
+
+Character Card Name Tags
+
+Character Detail：
+
+Avatar Name
+
+[ Start Chat ]
+
+Description Personality Scenario
+
+World Books Presets
+
+[ Edit ] [ Export ] [ Delete ]
+
+============================================================ 二十、Story
+UI ============================================================
+
+Stories
+
+[ + New Story ]
+
+我的冒险 星际远征 魔法学院
+
+Story Detail：
+
+Story Name
+
+Main Character Companions NPCs World Books Memory Chats
+
+添加角色：
+
+[ Add Character ]
+
+选择：
+
+Main Character Companion NPC
+
+永久 Companion：
+
+[ Add as Companion ]
+
+============================================================
+二十一、Community 占位
+============================================================
+
+V0 页面保留：
+
+Community
+
+Coming Soon
+
+未来可能提供： - Character Sharing - World Sharing - Creator - Public
+Library
+
+但 V0：
+
+没有任何： - 帖子 - 评论 - 点赞 - 用户主页 - 上传 - 搜索 - 推荐 - 排行榜
+
+后端也不实现实际社区 API。
+
+============================================================
+二十二、Settings
+============================================================
+
+Appearance - Dark - Light - System
+
+Language
+
+API Profiles
+
+Presets
+
+Chat： - Streaming - Auto Summary - Context - Generation
+
+Data： - Export - Import - Clear Data
+
+Advanced： - Prompt Debugger - Logs - Developer Mode
+
+About
+
+============================================================
+二十三、Import / Export
+============================================================
+
+Character：
+
+PNG JSON
+
+World Book：
+
+JSON
+
+完整备份：
+
+tavern-backup.zip
+
+包括：
+
+characters/ worldbooks/ stories/ chats/ presets/ settings/
+
+API Key 默认不进入 Backup。
+
+============================================================
+二十四、数据库表
+============================================================
+
+characters character_versions character_worldbooks
+
+worldbooks worldbook_entries
+
+stories story_participants
+
+conversations messages generations
+
+memories
+
+presets api_profiles
+
+settings
+
+未来可增加：
+
+accounts community_items creators cloud_sync
+
+V0 不创建实际社区业务表也可以。
+
+============================================================
+二十五、数据库关系
+============================================================
+
+Character | +– CharacterVersion | +– CharacterWorldBook – WorldBook | +–
+StoryParticipant – Story | +– Conversation | +– Message | +– Generation
+
+Story | +– Memory | +– WorldBook
+
+============================================================
+二十六、开发阶段
+============================================================
+
+Phase 0：项目骨架
+
+任务： - Git Repository - Android Project - Kotlin - Compose - Room -
+Navigation - Theme - CI - Debug Build
+
+验收： App 可以安装、启动、导航。
+
+Phase 1：Domain Model + Database
+
+任务： - Entity - DAO - Repository - Migration - Unit Test
+
+验收： 所有核心对象能够 CRUD。
+
+Phase 2：Character
+
+任务： - List - Detail - Create - Edit - Delete - Duplicate - JSON
+Import - PNG Import - Export - Version
+
+Phase 3：World Book
+
+任务： - World Book CRUD - Entry CRUD - Key - Priority - Constant -
+Probability - Matching - Test
+
+Phase 4：Provider
+
+任务： - Provider Interface - OpenAI - xAI - Google - OpenAI
+Compatible - API Profile - Secure Key - Streaming - Error Handling
+
+Phase 5：Chat Engine
+
+任务： - Conversation - Message - Send - Stream - Stop - Save - Reload
+
+Phase 6：Generation
+
+任务： - Regenerate - Generation List - Switch Generation - Delete
+Generation
+
+Phase 7：Branch
+
+任务： - parentMessageId - Branch creation - Branch switching - Branch
+persistence
+
+Phase 8：Story
+
+任务： - Story CRUD - Main Character - Companion - NPC - Story World
+Book - Story Chat
+
+Phase 9：Prompt Engine
+
+任务： - PromptBlock - Pipeline - Character - World - Companion -
+Memory - History - User Message
+
+Phase 10：Context Engine
+
+任务： - Token Estimate - Context Limit - Priority - History Trimming -
+Response Budget
+
+Phase 11：Memory
+
+任务： - Summary - Manual Edit - AI Summary - Summary Injection
+
+Phase 12：Prompt Debugger
+
+任务： 显示： - Prompt Blocks - Estimated Tokens - Context Limit -
+Included / Excluded Entries
+
+敏感信息不得显示。
+
+Phase 13：Backup
+
+任务： - Export - Import - Restore - Migration
+
+Phase 14：Settings
+
+任务： - Appearance - Language - API - Preset - Chat - Data - Advanced -
+About
+
+Phase 15：Community Placeholder
+
+任务： - Navigation - Coming Soon Page - Feature Flag
+
+禁止实现真实社区。
+
+Phase 16：测试与优化
+
+任务： - Unit Test - Integration Test - UI Test - 真机测试 -
+长聊天测试 - 网络测试 - API 异常测试 - 性能测试 - 数据恢复测试
+
+Phase 17：Release
+
+任务： - Release Build - Signing - Version - Git Tag - GitHub Release -
+APK - Release Notes
+
+============================================================
+二十七、详细开发执行顺序
+============================================================
+
+推荐按照以下顺序真正写代码：
+
+01 创建 Git Repository 02 创建 Android Project 03 配置 Gradle 04 配置
+Compose 05 配置 Navigation 06 配置 Theme 07 建立 core 模块 08 建立
+feature 模块 09 建立 engine 模块 10 建立 provider 模块
+
+11 创建 Domain Models 12 创建 Room Database 13 创建 DAO 14 创建
+Repository 15 创建 Migration 16 编写 Database Tests
+
+17 创建 Character UI 18 Character CRUD 19 Character Version 20 JSON
+Parser 21 PNG Parser 22 Character Export
+
+23 World Book UI 24 Entry CRUD 25 Matcher 26 Priority 27 Constant 28
+Probability 29 Injection 30 Entry Test
+
+31 Provider Interface 32 API Profile 33 Keystore 34 OpenAI 35 xAI 36
+Google 37 OpenAI Compatible 38 Streaming 39 Error Handling
+
+40 Conversation 41 Message 42 Chat UI 43 Send 44 Stream 45 Stop 46 Save
+47 Reload
+
+48 Generation 49 Regenerate 50 Generation Switch
+
+51 Branch Tree 52 Branch UI 53 Branch Persistence
+
+54 Story 55 Story Participant 56 Main Character 57 Companion 58 NPC 59
+Story World
+
+60 PromptBlock 61 Prompt Pipeline 62 Context Builder 63 Token Estimate
+64 Context Limit
+
+65 Chat Summary 66 Summary Editor 67 AI Summary
+
+68 Prompt Debugger
+
+69 Backup 70 Restore
+
+71 Settings 72 Community Placeholder
+
+73 Unit Tests 74 Integration Tests 75 UI Tests 76 Real Device Tests 77
+Performance Tests 78 Security Review 79 Release Build 80 Beta Release
+
+============================================================
+二十八、测试要求
+============================================================
+
+Unit Test：
+
+-   Character Parser
+-   WorldBook Matcher
+-   Prompt Builder
+-   Context Manager
+-   Branch Tree
+-   JSON Serialization
+
+Integration：
+
+Character -> World -> Story -> Prompt -> Provider -> Generation ->
+Database
+
+UI：
+
+-   创建 Character
+-   导入 Character
+-   创建 World
+-   创建 Story
+-   添加 Companion
+-   开始 Chat
+-   Streaming
+-   Regenerate
+-   Branch
+-   Backup
+-   Restore
+
+真机：
+
+-   低端 Android
+-   中端 Android
+-   高端 Android
+
+异常：
+
+-   断网
+-   Wi-Fi / Mobile 切换
+-   API 401
+-   API 403
+-   API 429
+-   API 500
+-   Timeout
+-   Context Too Long
+-   App 后台
+-   锁屏
+-   App 被系统杀死
+-   恢复聊天
+
+============================================================
+二十九、性能目标
+============================================================
+
+目标：
+
+冷启动 < 3 秒（普通设备）
+
+正常 UI： 约 60 FPS
+
+长聊天： 至少测试 1000+ messages
+
+Character： 至少测试 10,000+ 字
+
+World Book： 至少测试 500 Entries
+
+============================================================
+三十、隐私与安全
+============================================================
+
+默认本地：
+
+Character -> Local World -> Local Story -> Local Chat -> Local Memory ->
+Local
+
+API Key：
+
+Secure Local Storage
+
+禁止：
+
+API Key -> 自有服务器 API Key -> Analytics API Key -> Crash Report API
+Key -> Log API Key -> Backup
+
+生产环境日志不得包含：
+
+-   Authorization Header
+-   API Key
+-   完整 Prompt
+-   完整 Chat
+-   完整 AI Response
+
+============================================================ 三十一、Git
+工作流 ============================================================
+
+分支：
+
+main develop feature/ fix/
+
+Commit：
+
+feat: fix: refactor: docs: test: chore:
+
+例：
+
+feat: add character card parser feat: add streaming provider feat: add
+companion system fix: preserve generation history
+
+============================================================
+三十二、CI/CD
+============================================================
+
+Push -> Build -> Unit Test -> Lint -> APK
+
+Release：
+
+Tag v0.1.0 -> Build -> Sign -> GitHub Release -> APK
+
+版本：
+
+0.1.x = Alpha 0.2.x = Beta 0.9.x = Release Candidate 1.0.0 = Stable
+
+============================================================ 三十三、V0
+验收流程 ============================================================
+
+完整流程必须能够：
+
+安装 App -> 添加自己的 API Key -> 创建 / 导入 Character -> 创建 World
+Book -> 设置 Character 默认 World -> 创建 Story -> 选择主角 -> 把另一个
+Character 设置为 Companion -> 选择 Story World -> 开始 Chat -> AI
+Streaming -> Regenerate -> 切换 Generation -> 从任意历史节点 Branch ->
+继续剧情 -> Memory Summary -> 重新打开 App -> 继续聊天 -> Export Backup
+-> Import Backup
+
+全部成功后：
+
+Project Tavern V0 核心功能完成。
+
+============================================================ 三十四、V0
+后续路线 ============================================================
+
+V1：
+
+-   云同步
+-   账号
+-   更高级 Memory
+-   Character / World 管理增强
+-   Windows
+-   更多 Provider
+-   Prompt 模板系统
+
+V2：
+
+-   Community
+-   Public Character
+-   Public World Book
+-   Creator
+-   收藏
+-   搜索
+-   推荐
+
+V3：
+
+-   Marketplace
+-   Creator Economy
+-   商业化
+-   更完整的 Story / RPG 系统
+
+注意：
+
+社区上线前必须重新进行内容治理、隐私、数据安全、平台政策和适用法律评估。
+
+============================================================
+三十五、最终产品哲学
+============================================================
+
+Project Tavern 不应该首先成为：
+
+“一个什么都有的 AI 平台”。
+
+而应该首先成为：
+
+“最好用的个人 AI Tavern Client”。
+
+用户打开 App：
+
+我有自己的模型。 我有自己的角色。 我有自己的世界。 我有自己的故事。
+我可以随时切换模型。 我可以让角色长期陪伴。 我可以让剧情产生无数分支。
+我的数据属于我。
+
+最终核心：
+
+Character + World + Story + Companion + Memory + Branch + BYOK + Prompt
+Engine
+
+构成 Project Tavern 的核心产品壁垒。
+
+============================================================ 文档结束
+============================================================

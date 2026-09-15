@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Tavern" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/candle</item>
+        <item name="colorOnPrimary">@color/on_candle</item>
+        <item name="colorPrimaryContainer">@color/raised</item>
+        <item name="colorOnPrimaryContainer">@color/ink</item>
+        <item name="colorSecondary">@color/wine</item>
+        <item name="colorOnSecondary">@color/ink</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/ink</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/surface</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:textColorPrimary">@color/ink</item>
+        <item name="android:textColorSecondary">@color/muted</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="colorControlActivated">@color/candle</item>
+        <item name="android:colorAccent">@color/candle</item>
+    </style>
+</resources>

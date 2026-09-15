@@ -1,0 +1,375 @@
+package com.projecttavern.app
+
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
+import com.google.gson.Gson
+import com.projecttavern.app.databinding.ActivityMainBinding
+import com.projecttavern.app.databinding.PanelListBinding
+import java.io.File
+
+class MainActivity : AppCompatActivity() {
+    private lateinit var b: ActivityMainBinding
+    private val gson = Gson()
+    private val import =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+            if (uri == null) return@registerForActivityResult
+            try {
+                val json = contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: return@registerForActivityResult
+                val next = gson.fromJson(json, TavernState::class.java)
+                if (next.characters != null) Store.replace(next)
+                refresh()
+            } catch (_: Exception) {
+            }
+        }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        b = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(b.root)
+        b.bottomNav.setOnItemSelectedListener { item ->
+            show(item.itemId)
+            true
+        }
+        b.panelCharacters.fab.setOnClickListener {
+            val c = Character(id = Store.nid(), name = Store.t("newCharacter"), firstMessage = "…", createdAt = Store.now(), updatedAt = Store.now())
+            Store.state.characters.add(0, c)
+            Store.persist()
+            startActivity(Intent(this, CharacterActivity::class.java).putExtra("id", c.id))
+        }
+        b.panelWorlds.fab.setOnClickListener {
+            val w = WorldBook(id = Store.nid(), name = Store.t("newWorld"), createdAt = Store.now(), updatedAt = Store.now())
+            Store.state.worldBooks.add(0, w)
+            Store.persist()
+            startActivity(Intent(this, WorldActivity::class.java).putExtra("id", w.id))
+        }
+        b.panelStories.fab.setOnClickListener {
+            val st = Story(id = Store.nid(), name = Store.t("newStory"), createdAt = Store.now(), updatedAt = Store.now())
+            Store.state.stories.add(0, st)
+            Store.persist()
+            startActivity(Intent(this, StoryActivity::class.java).putExtra("id", st.id))
+        }
+        b.panelChats.fab.visibility = View.GONE
+        b.panelCharacters.search.addTextChangedListener(SimpleWatcher { refreshCharacters() })
+        wireSettings()
+        show(R.id.nav_characters)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refresh()
+    }
+
+    private fun show(id: Int) {
+        b.panelCharacters.root.visibility = goneIf(id != R.id.nav_characters)
+        b.panelWorlds.root.visibility = goneIf(id != R.id.nav_worlds)
+        b.panelStories.root.visibility = goneIf(id != R.id.nav_stories)
+        b.panelChats.root.visibility = goneIf(id != R.id.nav_chats)
+        b.panelSettings.root.visibility = goneIf(id != R.id.nav_settings)
+        refresh()
+    }
+
+    private fun goneIf(hide: Boolean) = if (hide) View.GONE else View.VISIBLE
+
+    private fun refresh() {
+        val loc = Store.state.locale
+        b.brand.text = if (loc == "en") "TAVERN" else "暮色酒馆"
+        b.tagline.text = Store.t("tagline")
+        b.localeBadge.text = if (loc == "en") "EN" else "中文"
+        b.bottomNav.menu.findItem(R.id.nav_characters).title = Store.t("navCharacters")
+        b.bottomNav.menu.findItem(R.id.nav_worlds).title = Store.t("navWorlds")
+        b.bottomNav.menu.findItem(R.id.nav_stories).title = Store.t("navStories")
+        b.bottomNav.menu.findItem(R.id.nav_chats).title = Store.t("navChats")
+        b.bottomNav.menu.findItem(R.id.nav_settings).title = Store.t("navSettings")
+        setupPanel(b.panelCharacters, Store.t("characters"), Store.t("privateHint"), true)
+        setupPanel(b.panelWorlds, Store.t("worlds"), Store.t("sectionsHint"), true)
+        setupPanel(b.panelStories, Store.t("stories"), "", true)
+        setupPanel(b.panelChats, Store.t("chats"), Store.t("privateHint"), false)
+        b.panelCharacters.search.hint = Store.t("search")
+        refreshCharacters()
+        refreshWorlds()
+        refreshStories()
+        refreshChats()
+        refreshSettings()
+    }
+
+    private fun setupPanel(p: PanelListBinding, title: String, hint: String, fab: Boolean) {
+        p.panelTitle.text = title
+        p.panelHint.text = hint
+        p.panelHint.visibility = if (hint.isBlank()) View.GONE else View.VISIBLE
+        p.search.visibility = if (p === b.panelCharacters) View.VISIBLE else View.GONE
+        p.fab.visibility = if (fab) View.VISIBLE else View.GONE
+    }
+
+    private fun refreshCharacters() {
+        val q = b.panelCharacters.search.text?.toString()?.trim()?.lowercase().orEmpty()
+        val list = Store.state.characters.filter {
+            q.isEmpty() || it.name.lowercase().contains(q) || it.tags.any { t -> t.lowercase().contains(q) }
+        }
+        fill(b.panelCharacters.list) {
+            list.forEach { c ->
+                inflateRow(it, c.name, c.description.ifBlank { Store.t("noDesc") }, Store.t("privateChat")) {
+                    startActivity(Intent(this, CharacterActivity::class.java).putExtra("id", c.id))
+                }.findViewById<TextView>(R.id.meta).setOnClickListener { _ ->
+                    val id = Store.startConversation(c.id, null) ?: return@setOnClickListener
+                    startActivity(Intent(this, ChatActivity::class.java).putExtra("id", id))
+                }
+            }
+        }
+    }
+
+    private fun refreshWorlds() {
+        fill(b.panelWorlds.list) {
+            Store.state.worldBooks.forEach { w ->
+                val n = Store.state.entries.count { e -> e.worldBookId == w.id }
+                val filled = listOf(w.description, w.geography, w.history, w.institutions, w.culture, w.personalNotes).count { s -> s.isNotBlank() }
+                inflateRow(it, w.name, w.description.ifBlank { "$n ${Store.t("entries")}" }, "$filled/6") {
+                    startActivity(Intent(this, WorldActivity::class.java).putExtra("id", w.id))
+                }
+            }
+        }
+    }
+
+    private fun refreshStories() {
+        fill(b.panelStories.list) {
+            Store.state.stories.forEach { st ->
+                val n = Store.state.participants.count { it.storyId == st.id }
+                val chats = Store.state.conversations.count { it.storyId == st.id }
+                inflateRow(it, st.name, st.description.ifBlank { Store.t("stories") }, "$n ${Store.t("people")} · $chats") {
+                    startActivity(Intent(this, StoryActivity::class.java).putExtra("id", st.id))
+                }
+            }
+        }
+    }
+
+    private fun refreshChats() {
+        fill(b.panelChats.list) {
+            val priv = Store.state.conversations.filter { it.storyId == null }.sortedByDescending { it.updatedAt }
+            val story = Store.state.conversations.filter { it.storyId != null }.sortedByDescending { it.updatedAt }
+            if (priv.isEmpty() && story.isEmpty()) {
+                val tv = TextView(this)
+                tv.text = Store.t("noChats")
+                tv.setTextColor(getColor(R.color.muted))
+                tv.textSize = 14f
+                it.addView(tv)
+            }
+            priv.forEach { c ->
+                inflateRow(it, c.title, Store.t("privateChat"), "") {
+                    startActivity(Intent(this, ChatActivity::class.java).putExtra("id", c.id))
+                }
+            }
+            story.forEach { c ->
+                val sn = Store.state.stories.find { s -> s.id == c.storyId }?.name.orEmpty()
+                inflateRow(it, c.title, sn, "") {
+                    startActivity(Intent(this, ChatActivity::class.java).putExtra("id", c.id))
+                }
+            }
+        }
+    }
+
+    private var settingsWired = false
+
+    private fun wireSettings() {
+        val s = b.panelSettings
+        s.btnZh.setOnClickListener { Store.setLocale("zh"); refresh() }
+        s.btnEn.setOnClickListener { Store.setLocale("en"); refresh() }
+        s.btnDark.setOnClickListener { Store.setAppearance("dark"); refresh() }
+        s.btnLight.setOnClickListener { Store.setAppearance("light"); refresh() }
+        s.btnSystem.setOnClickListener { Store.setAppearance("system"); refresh() }
+        s.btnNewProfile.setOnClickListener {
+            val p = ApiProfile(Store.nid(), if (Store.state.locale == "en") "OpenAI" else "OpenAI 兼容", "openai", "https://api.openai.com/v1", "gpt-4o-mini", "")
+            Store.state.profiles.add(p)
+            Store.state.activeProfileId = p.id
+            Store.persist()
+            startActivity(Intent(this, ProfileActivity::class.java).putExtra("id", p.id))
+        }
+        s.btnNewPreset.setOnClickListener {
+            val loc = Store.state.locale
+            val p = Preset(Store.nid(), Store.t("newPreset"), loc, 0.9, 0.95, 800, 32000, 800, if (loc == "en") "Keep the character's voice. Never act for the user." else "保持角色声音。不要替用户行动。")
+            Store.state.presets.add(p)
+            Store.persist()
+            refreshSettings()
+        }
+        s.rowStreaming.setOnClickListener {
+            Store.state.streaming = !Store.state.streaming
+            Store.persist()
+            refreshSettings()
+        }
+        s.rowAutoSummary.setOnClickListener {
+            Store.state.autoSummary = !Store.state.autoSummary
+            Store.persist()
+            refreshSettings()
+        }
+        s.rowDeveloper.setOnClickListener {
+            Store.state.developerMode = !Store.state.developerMode
+            Store.persist()
+            refreshSettings()
+        }
+        s.btnExport.setOnClickListener { exportBackup() }
+        s.btnImport.setOnClickListener { import.launch("application/json") }
+        s.btnReset.setOnClickListener {
+            confirm(this, Store.t("resetSeedQ")) {
+                Store.reset()
+                refresh()
+            }
+        }
+        if (!settingsWired) {
+            s.etUserName.addTextChangedListener(SimpleWatcher {
+                val v = s.etUserName.text?.toString().orEmpty()
+                if (v != Store.state.userName) {
+                    Store.state.userName = v
+                    Store.persist()
+                }
+            })
+            s.etUserPersona.addTextChangedListener(SimpleWatcher {
+                val v = s.etUserPersona.text?.toString().orEmpty()
+                if (v != Store.state.userPersona) {
+                    Store.state.userPersona = v
+                    Store.persist()
+                }
+            })
+            settingsWired = true
+        }
+    }
+
+    private fun paintChip(v: TextView, on: Boolean) {
+        v.setBackgroundResource(if (on) R.drawable.bg_chip_on else R.drawable.bg_chip)
+        v.setTextColor(getColor(if (on) R.color.on_candle else R.color.ink))
+    }
+
+    private fun refreshSettings() {
+        val s = b.panelSettings
+        val onZh = Store.state.locale != "en"
+        s.titleSettings.text = Store.t("settings")
+        s.settingsHint.text = Store.t("settingsHint")
+        s.labelAppearance.text = Store.t("appearance")
+        s.appearanceHint.text = Store.t("appearanceHint")
+        s.btnDark.text = Store.t("dark")
+        s.btnLight.text = Store.t("light")
+        s.btnSystem.text = Store.t("system")
+        paintChip(s.btnDark, Store.state.appearance == "dark")
+        paintChip(s.btnLight, Store.state.appearance == "light")
+        paintChip(s.btnSystem, Store.state.appearance == "system")
+        s.labelLanguage.text = Store.t("language")
+        s.languageHint.text = Store.t("languageHint")
+        paintChip(s.btnZh, onZh)
+        paintChip(s.btnEn, !onZh)
+        s.labelPersona.text = Store.t("persona")
+        s.personaHint.text = Store.t("personaHint")
+        s.labelUserName.text = Store.t("personaName")
+        s.labelUserPersona.text = Store.t("personaBio")
+        if (s.etUserName.text?.toString() != Store.state.userName) s.etUserName.setText(Store.state.userName)
+        if (s.etUserPersona.text?.toString() != Store.state.userPersona) s.etUserPersona.setText(Store.state.userPersona)
+        s.labelProfiles.text = Store.t("apiProfiles")
+        s.btnNewProfile.text = "+ ${Store.t("newProfile")}"
+        s.noProfiles.text = Store.t("noProfiles")
+        s.noProfiles.visibility = if (Store.state.profiles.isEmpty()) View.VISIBLE else View.GONE
+        s.profileList.removeAllViews()
+        Store.state.profiles.forEach { p ->
+            val kind = if (p.provider == "claude") "Claude" else "OpenAI"
+            val star = if (p.id == Store.state.activeProfileId) "  ★" else ""
+            inflateRow(s.profileList, p.name, "$kind · ${p.model}$star", "") {
+                Store.state.activeProfileId = p.id
+                Store.persist()
+                startActivity(Intent(this, ProfileActivity::class.java).putExtra("id", p.id))
+            }
+        }
+        s.labelPresets.text = Store.t("presets")
+        s.presetsHint.text = Store.t("presetsHint")
+        s.btnNewPreset.text = "+ ${Store.t("newPreset")}"
+        s.presetList.removeAllViews()
+        Store.localePresets().forEach { p -> inflatePreset(s.presetList, p) }
+        s.labelChat.text = Store.t("chatOptions")
+        s.labelStreaming.text = Store.t("streaming")
+        s.valStreaming.text = if (Store.state.streaming) "ON" else "OFF"
+        s.labelAutoSummary.text = Store.t("autoSummary")
+        s.valAutoSummary.text = if (Store.state.autoSummary) "ON" else "OFF"
+        s.labelAdvanced.text = Store.t("advanced")
+        s.developerHint.text = Store.t("developerHint")
+        s.labelDeveloper.text = Store.t("developerMode")
+        s.valDeveloper.text = if (Store.state.developerMode) "ON" else "OFF"
+        s.labelData.text = Store.t("data")
+        s.btnExport.text = Store.t("exportBackup")
+        s.btnImport.text = Store.t("restoreBackup")
+        s.btnReset.text = Store.t("resetSeed")
+        s.labelAbout.text = Store.t("about")
+        s.aboutBody.text = Store.t("aboutBody")
+        s.aboutLine.text = Store.t("aboutLine")
+    }
+
+    private fun inflatePreset(parent: LinearLayout, p: Preset) {
+        val v = LayoutInflater.from(this).inflate(R.layout.item_preset, parent, false)
+        val etName = v.findViewById<EditText>(R.id.etName)
+        val etTemp = v.findViewById<EditText>(R.id.etTemp)
+        val etTopP = v.findViewById<EditText>(R.id.etTopP)
+        val etMax = v.findViewById<EditText>(R.id.etMax)
+        val etContext = v.findViewById<EditText>(R.id.etContext)
+        val etBudget = v.findViewById<EditText>(R.id.etBudget)
+        val etPrompt = v.findViewById<EditText>(R.id.etPrompt)
+        v.findViewById<TextView>(R.id.lContext).text = Store.t("contextLimit")
+        v.findViewById<TextView>(R.id.lBudget).text = Store.t("responseBudget")
+        v.findViewById<TextView>(R.id.btnDelete).text = Store.t("delete")
+        etName.setText(p.name)
+        etTemp.setText(p.temperature.toString())
+        etTopP.setText(p.topP.toString())
+        etMax.setText(p.maxTokens.toString())
+        etContext.setText(p.contextLimit.toString())
+        etBudget.setText(p.responseBudget.toString())
+        etPrompt.setText(p.systemPrompt)
+        fun save() {
+            p.name = etName.text.toString()
+            p.temperature = etTemp.text.toString().toDoubleOrNull() ?: p.temperature
+            p.topP = etTopP.text.toString().toDoubleOrNull() ?: p.topP
+            p.maxTokens = etMax.text.toString().toIntOrNull() ?: p.maxTokens
+            p.contextLimit = etContext.text.toString().toIntOrNull() ?: p.contextLimit
+            p.responseBudget = etBudget.text.toString().toIntOrNull() ?: p.responseBudget
+            p.systemPrompt = etPrompt.text.toString()
+            Store.persist()
+        }
+        val w = SimpleWatcher { save() }
+        etName.addTextChangedListener(w)
+        etTemp.addTextChangedListener(w)
+        etTopP.addTextChangedListener(w)
+        etMax.addTextChangedListener(w)
+        etContext.addTextChangedListener(w)
+        etBudget.addTextChangedListener(w)
+        etPrompt.addTextChangedListener(w)
+        v.findViewById<TextView>(R.id.btnDelete).setOnClickListener {
+            confirm(this, Store.t("deleteQ")) {
+                Store.state.presets.removeAll { it.id == p.id }
+                val fallback = Store.localePresets().firstOrNull()?.id ?: Store.state.presets.firstOrNull()?.id.orEmpty()
+                Store.state.conversations.forEach { if (it.presetId == p.id) it.presetId = fallback }
+                Store.persist()
+                refreshSettings()
+            }
+        }
+        parent.addView(v)
+    }
+
+    private fun exportBackup() {
+        val f = File(cacheDir, "tavern-backup.json")
+        f.writeText(Store.backupJson())
+        val uri = FileProvider.getUriForFile(this, "$packageName.files", f)
+        val intent = Intent(Intent.ACTION_SEND).setType("application/json").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        startActivity(Intent.createChooser(intent, Store.t("exportBackup")))
+    }
+
+    private fun fill(list: LinearLayout, block: (LinearLayout) -> Unit) {
+        list.removeAllViews()
+        block(list)
+    }
+}
+
+class SimpleWatcher(val after: () -> Unit) : android.text.TextWatcher {
+    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+    override fun afterTextChanged(s: android.text.Editable?) { after() }
+}

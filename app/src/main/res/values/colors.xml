@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#f3ead9</color>
+    <color name="surface">#fbf6ea</color>
+    <color name="raised">#efe4d0</color>
+    <color name="ink">#2a1d16</color>
+    <color name="muted">#7a6554</color>
+    <color name="line">#d8c6ad</color>
+    <color name="candle">#b56a1a</color>
+    <color name="wine">#8c3d3a</color>
+    <color name="on_candle">#f3ead9</color>
+</resources>
