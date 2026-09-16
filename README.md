@@ -6,24 +6,39 @@
 
 App **不提供推理、不做 API 中转、没有账号、没有云同步**。Key 只存在这台手机上。
 
-当前版本 **0.3**（`versionCode 3`）。
+当前构建：**v1.0.0-polished**（已附带发布版 APK）
+
+## 版本说明
+
+本次版本聚焦于成品化体验：
+
+- 统一页面卡片与底栏风格，视觉更稳定
+- 修正设置页、配置页、聊天页状态显示
+- 增强 API 配置的默认值和保存行为
+- 添加更清晰的提示与失败状态
+- 提高备份导入 / 恢复体验与错误提示
+- 默认启用更稳妥的安全网络与本地优先设计
+
+Android APK 已上传到 GitHub Releases，可直接下载体验：
+
+- Release: https://github.com/Aliang-ye/ProjectTavern/releases/tag/v1.0.0-polished
 
 ## 能做什么
 
 | 页 | 说明 |
 | --- | --- |
-| **角色** | 创建 / 编辑 / 复制 / 删除。描述、性格、场景、开场白、示例对话、系统提示。可直接「单独对话」，不必先开故事。 |
-| **世界书** | 概况、地理、历史、制度、人文、个人补充设定（始终注入）。另有关键词条目：优先级、概率、常驻、插入位置、条目测试。 |
+| **角色** | 创建 / 编辑 / 复制 / 删除。描述、性格、场景、开场白、示例对话、系统提示。可直接「单独对话」。 |
+| **世界书** | 概况、地理、历史、制度、人文、个人补充设定（始终注入）。另有高级条目测试。 |
 | **故事** | 长期 RPG 存档。主角 / 同伴 / 路人 + 故事世界书。 |
-| **对话** | 流式输出、停止、编辑、删除、重写、多版本 Generation、从任意句分叉。小说阅读感，不是聊天气泡墙。 |
+| **对话** | 流式输出、停止、编辑、删除、重写、多版本 Generation。小说阅读感。 |
 | **设置** | 主题、语言、用户主体、API、生成模式、流式/自动摘要、开发者模式、备份。 |
 
 ## 原则
 
 1. AI 是用户自己的，Tavern 是控制 AI 的工具。
 2. Character、World、Story、Memory、Chat 解耦。
-3. 本地优先。V0 不依赖自有后端。
-4. 社区、商城、账号、云同步全部不做，只留占位。
+3. 本地优先。App 不依赖自有后端。
+4. 只保留纯工具型体验，不引入社区、商城、账号或云同步。
 
 ## API（BYOK）
 
@@ -34,22 +49,18 @@ App **不提供推理、不做 API 中转、没有账号、没有云同步**。K
 | **OpenAI 兼容** | OpenAI、DeepSeek、xAI、Groq，以及任何 `/v1/chat/completions` |
 | **Claude** | Anthropic 官方或兼容 Messages 接口 |
 
-Key 明文存在本机 `filesDir/tavern.json`，**备份文件会去掉 Key**。
+Key 仅保存在本机 `filesDir/tavern.json`，**导出备份时会自动去掉 Key**。
 
 浏览器预览可能被跨域拦住；**Android 客户端直连，无此限制**。
 
-## 语言
+## 语言与人格
 
 两套纯语言，不混合：
 
 - 界面中文 → 模型只写简体中文
 - 界面 English → 模型只写英文
 
-对话提示词带强制语言锁。
-
-## 用户主体
-
-设置里填写你的名字和人设。会替换 `{{user}}`，并作为 `PERSONA` 块注入每一轮提示词。
+设置里填写你的名字和人设，会替换 `{{user}}`，并作为 `PERSONA` 块注入每一轮提示词。
 
 ## 生成模式
 
@@ -62,37 +73,31 @@ Key 明文存在本机 `filesDir/tavern.json`，**备份文件会去掉 Key**。
 | 快速模式 | 短句、多对话 |
 | 推理模式 | 先核对设定再写正文，不把思考过程写出来 |
 
-每套都能改 Temperature、Top P、Max tokens、上下文上限、回复预算、系统提示。
-
 ## 主题
 
 深色烛火 / 浅色原木纸张 / 跟随系统。
 
-## 截图式结构
+## 使用方式
 
-```
-启动
- └── 底栏
-      ├── 角色 → 详情 / 单独对话
-      ├── 世界 → 六栏目 + 条目 + 条目测试
-      ├── 故事 → 主角 / 同伴 / 路人 → 开聊
-      ├── 对话 → 单独对话 ∪ 故事对话
-      └── 设置 → 主题 / 主体 / API / 模式 / 备份
-```
+1. 在设置里创建一个 API 配置
+2. 选择 OpenAI 兼容或 Claude
+3. 填写模型、接口地址、API Key
+4. 在角色页或故事页建立对话
+5. 进行角色扮演、世界书注入和长对话创作
+
+首次会带示例角色「艾莉丝 / 莱恩」和世界书「暮色酒馆」。
 
 ## 环境
 
 - Android 8.0（API 26）+
 - 编译：JDK 17、Android SDK 34、Gradle 8.7（已带 Wrapper）
-- 权限：仅 `INTERNET`（直连你自己的 API）
+- 权限：仅 `INTERNET`
 
 ## 用 Android Studio 打开
 
 1. `File → Open` 选本仓库根目录
 2. 等待 Gradle 同步
 3. 连真机或模拟器 Run
-
-首次会带示例角色「艾莉丝 / 莱恩」和世界书「暮色酒馆」。去设置里填 API Key 即可开聊。
 
 ## 命令行打 Debug 包
 
@@ -106,33 +111,7 @@ chmod +x gradlew
 
 产物：`app/build/outputs/apk/debug/app-debug.apk`
 
-debug 签名，仅供自己装。换机器重新打包可能要先卸载再装。
-
-## 目录
-
-```
-ProjectTavern/
-├── README.md
-├── LICENSE
-├── docs/USAGE.md
-├── app/src/main/
-│   ├── AndroidManifest.xml
-│   └── java/com/projecttavern/app/
-│       ├── TavernApp.kt          # Application，主题
-│       ├── Models.kt             # 全部数据模型
-│       ├── Store.kt              # 本地 JSON 持久化 + 示例数据
-│       ├── I18n.kt               # 中/英界面
-│       ├── Engine.kt             # Prompt 构建、世界书匹配、分支路径
-│       ├── Llm.kt                # OpenAI SSE / Claude SSE
-│       ├── MainActivity.kt       # 五栏主界面 + 完整设置
-│       ├── CharacterActivity.kt
-│       ├── WorldActivity.kt
-│       ├── EntryTestActivity.kt
-│       ├── StoryActivity.kt
-│       ├── ChatActivity.kt
-│       ├── ProfileActivity.kt
-│       └── Ui.kt
-```
+debug 签名，仅供自己安装测试。换机器重新打包可能要先卸载再装。
 
 ## 数据存在哪
 
