@@ -30,13 +30,8 @@ object Store {
             state.streaming = true
             state.appearance = "dark"
         }
-        sanitizeSensitiveFields()
         migrate()
         persist()
-    }
-
-    private fun sanitizeSensitiveFields() {
-        state.profiles.forEach { it.apiKey = "" }
     }
 
     fun t(key: String) = I18n.t(state.locale, key)
@@ -57,7 +52,7 @@ object Store {
 
     fun persist() {
         try {
-            file.writeText(gson.toJson(redactedStateForWrite()))
+            file.writeText(gson.toJson(state))
         } catch (_: Exception) {
         }
         listeners.forEach { it() }
@@ -87,6 +82,13 @@ object Store {
         if (state.profiles.isEmpty()) {
             state.profiles = keys
             state.activeProfileId = active
+        } else {
+            state.profiles.forEach { p ->
+                val old = keys.find { it.id == p.id } ?: keys.find { it.name == p.name }
+                if (p.apiKey.isBlank() && old != null && old.apiKey.isNotBlank()) {
+                    p.apiKey = old.apiKey
+                }
+            }
         }
         migrate()
         persist()

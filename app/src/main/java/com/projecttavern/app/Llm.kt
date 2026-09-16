@@ -122,34 +122,45 @@ object Llm {
         if (!res.isSuccessful) {
             val err = res.body?.string().orEmpty()
             res.close()
+            currentCall = null
             throw RuntimeException(mapStatus(res.code, err))
         }
-        val bodyText = res.body?.string().orEmpty()
-        res.close()
-        currentCall = null
-        if (bodyText.isBlank()) return ""
 
         val full = StringBuilder()
         var sawData = false
-        for (rawLine in bodyText.lines()) {
-            val s = rawLine.trim()
-            if (!s.startsWith("data:")) continue
-            val data = s.removePrefix("data:").trim()
-            if (data.isEmpty() || data == "[DONE]") continue
-            sawData = true
-            try {
-                val piece = pick(JSONObject(data))
-                if (piece.isNotEmpty()) {
-                    full.append(piece)
-                    onDelta(piece)
-                }
-            } catch (e: Exception) {
-                val preview = data.take(180)
-                throw RuntimeException("Malformed model stream payload: $preview", e)
-            }
+        val responseBody = res.body ?: run {
+            res.close()
+            currentCall = null
+            return ""
         }
-        if (!sawData) {
-            throw RuntimeException("Model returned no stream data: ${bodyText.take(180)}")
+
+        try {
+            val source = responseBody.source()
+            while (!source.exhausted()) {
+                val rawLine = source.readUtf8Line() ?: break
+                val s = rawLine.trim()
+                if (!s.startsWith("data:")) continue
+                val data = s.removePrefix("data:").trim()
+                if (data.isEmpty() || data == "[DONE]") continue
+                sawData = true
+                try {
+                    val piece = pick(JSONObject(data))
+                    if (piece.isNotEmpty()) {
+                        full.append(piece)
+                        onDelta(piece)
+                    }
+                } catch (e: Exception) {
+                    val preview = data.take(180)
+                    throw RuntimeException("Malformed model stream payload: $preview", e)
+                }
+            }
+        } finally {
+            res.close()
+            currentCall = null
+        }
+
+        if (!sawData && full.isEmpty()) {
+            throw RuntimeException("Model returned no stream data")
         }
         return full.toString()
     }

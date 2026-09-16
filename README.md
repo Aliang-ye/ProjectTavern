@@ -6,22 +6,21 @@
 
 App **不提供推理、不做 API 中转、没有账号、没有云同步**。Key 只存在这台手机上。
 
-当前构建：**v1.0.0-polished**（已附带发布版 APK）
+当前构建：**v1.0.1-enhanced**（核心体验与通信升级）
 
 ## 版本说明
 
-本次版本聚焦于成品化体验：
+本次版本聚焦于通信稳定性、真实流式体验与本地开发支持：
 
-- 统一页面卡片与底栏风格，视觉更稳定
-- 修正设置页、配置页、聊天页状态显示
-- 增强 API 配置的默认值和保存行为
-- 添加更清晰的提示与失败状态
-- 提高备份导入 / 恢复体验与错误提示
-- 默认启用更稳妥的安全网络与本地优先设计
+- **真正流式输出（Real-time SSE Streaming）**：重构 SSE 数据流解析为按行实时响应，打字机式平滑逐字输出，彻底解决此前等待全部生成完毕才一次性渲染的卡顿问题
+- **修复本地 Key 持久化**：修正私有沙盒文件存储逻辑，API Key 安全持久保存在设备内部（`filesDir/tavern.json`），应用重启不丢失，同时确保「导出备份」时依然自动脱敏
+- **支持局域网与本地模型（Local LLMs）**：放行本地网络明文 HTTP 协议，无缝直连局域网部署的 **Ollama**、**LM Studio**、**SillyTavern**、**vLLM** 或私有推理网关
+- **UI 渲染高频打字优化**：聊天页面改为局部差量刷新（`notifyItemChanged`），大幅降低高频吐字时的渲染负载与掉帧
+- **生命周期保护**：增强网络请求异常与页面退出时的流式任务取消处理，杜绝后台泄漏
 
-Android APK 已上传到 GitHub Releases，可直接下载体验：
+Android APK 发布页：
 
-- Release: https://github.com/Aliang-ye/ProjectTavern/releases/tag/v1.0.0-polished
+- Release: https://github.com/Aliang-ye/ProjectTavern/releases
 
 ## 能做什么
 
@@ -47,6 +46,7 @@ Android APK 已上传到 GitHub Releases，可直接下载体验：
 | 类型 | 适用 |
 | --- | --- |
 | **OpenAI 兼容** | OpenAI、DeepSeek、xAI、Groq，以及任何 `/v1/chat/completions` |
+| **本地 / 局域网模型** | Ollama（`http://192.168.x.x:11434/v1`）、LM Studio、SillyTavern |
 | **Claude** | Anthropic 官方或兼容 Messages 接口 |
 
 Key 仅保存在本机 `filesDir/tavern.json`，**导出备份时会自动去掉 Key**。

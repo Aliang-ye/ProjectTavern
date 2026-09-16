@@ -131,13 +131,21 @@ class ChatActivity : AppCompatActivity() {
                 val full = Llm.stream(profile, built.messages, preset) { piece ->
                     if (!Store.state.streaming) return@stream
                     runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
                         val g = asst.generations[asst.generationIndex]
                         g.content += piece
                         asst.content = g.content
-                        refresh()
+                        val lastIdx = adapter.items.lastIndex
+                        if (lastIdx >= 0) {
+                            adapter.notifyItemChanged(lastIdx, Unit)
+                            b.messages.scrollToPosition(lastIdx)
+                        } else {
+                            refresh()
+                        }
                     }
                 }
                 runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
                     val g = asst.generations[asst.generationIndex]
                     if (full.isNotBlank()) g.content = full
                     asst.content = g.content
