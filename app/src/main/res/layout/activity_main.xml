@@ -9,6 +9,8 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="@color/surface"
+        android:elevation="2dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="16dp"
@@ -55,6 +57,76 @@
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="@color/line" />
+
+    <LinearLayout
+        android:id="@+id/statsRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/surface"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp">
+
+        <TextView
+            android:id="@+id/statCharacters"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_chip"
+            android:gravity="center"
+            android:paddingVertical="6dp"
+            android:textColor="@color/ink"
+            android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/statWorlds"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_chip"
+            android:gravity="center"
+            android:paddingVertical="6dp"
+            android:textColor="@color/ink"
+            android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/statStories"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_chip"
+            android:gravity="center"
+            android:paddingVertical="6dp"
+            android:textColor="@color/ink"
+            android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/statChats"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_chip"
+            android:gravity="center"
+            android:paddingVertical="6dp"
+            android:textColor="@color/ink"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/statusBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="6dp"
+        android:background="@drawable/bg_chip_on"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="8dp"
+        android:textColor="@color/on_candle"
+        android:textSize="12sp" />
 
     <FrameLayout
         android:layout_width="match_parent"

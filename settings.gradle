@@ -1,8 +1,9 @@
 pluginManagement {
     repositories {
+        gradlePluginPortal()
         google()
         mavenCentral()
-        gradlePluginPortal()
+        maven { url 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/' }
     }
 }
 dependencyResolutionManagement {
@@ -10,6 +11,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven { url 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/' }
     }
 }
 rootProject.name = "ProjectTavern"

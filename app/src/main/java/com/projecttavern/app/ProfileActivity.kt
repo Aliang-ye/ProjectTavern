@@ -35,7 +35,7 @@ class ProfileActivity : AppCompatActivity() {
         b.headerTitle.text = Store.t("apiProfiles")
         b.btnSave.text = Store.t("save")
         b.lName.text = Store.t("name"); b.etName.setText(p.name)
-        b.lProvider.text = Store.t("apiProfiles")
+        b.lProvider.text = if (Store.state.locale == "en") "Provider" else "提供商"
         b.btnOpenai.text = Store.t("providerOpenai")
         b.btnClaude.text = Store.t("providerClaude")
         b.lEndpoint.text = Store.t("endpoint"); b.etEndpoint.setText(p.endpoint)
@@ -72,11 +72,15 @@ class ProfileActivity : AppCompatActivity() {
 
     private fun save() {
         val p = Store.state.profiles.find { it.id == id } ?: return
-        p.name = b.etName.text.toString()
+        p.name = b.etName.text.toString().trim().ifBlank { if (provider == "claude") "Claude" else "OpenAI" }
         p.provider = provider
-        p.endpoint = b.etEndpoint.text.toString()
-        p.model = b.etModel.text.toString()
-        p.apiKey = b.etKey.text.toString()
+        p.endpoint = b.etEndpoint.text.toString().trim().ifBlank {
+            if (provider == "claude") "https://api.anthropic.com" else "https://api.openai.com/v1"
+        }
+        p.model = b.etModel.text.toString().trim().ifBlank {
+            if (provider == "claude") "claude-sonnet-4-5" else "gpt-4o-mini"
+        }
+        p.apiKey = b.etKey.text.toString().trim()
         Store.state.activeProfileId = p.id
         Store.persist()
     }

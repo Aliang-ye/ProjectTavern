@@ -30,8 +30,13 @@ object Store {
             state.streaming = true
             state.appearance = "dark"
         }
+        sanitizeSensitiveFields()
         migrate()
         persist()
+    }
+
+    private fun sanitizeSensitiveFields() {
+        state.profiles.forEach { it.apiKey = "" }
     }
 
     fun t(key: String) = I18n.t(state.locale, key)
@@ -44,9 +49,15 @@ object Store {
         return { listeners.remove(cb) }
     }
 
+    private fun redactedStateForWrite(): TavernState {
+        val copy = gson.fromJson(gson.toJson(state), TavernState::class.java)
+        copy.profiles.forEach { it.apiKey = "" }
+        return copy
+    }
+
     fun persist() {
         try {
-            file.writeText(gson.toJson(state))
+            file.writeText(gson.toJson(redactedStateForWrite()))
         } catch (_: Exception) {
         }
         listeners.forEach { it() }
@@ -81,11 +92,7 @@ object Store {
         persist()
     }
 
-    fun backupJson(): String {
-        val copy = gson.fromJson(gson.toJson(state), TavernState::class.java)
-        copy.profiles.forEach { it.apiKey = "" }
-        return gson.toJson(copy)
-    }
+    fun backupJson(): String = gson.toJson(redactedStateForWrite())
 
     fun activeProfile(): ApiProfile? = state.profiles.find { it.id == state.activeProfileId }
 
@@ -142,9 +149,9 @@ object Store {
     }
 
     private fun migrate() {
-        val first = state.userPersona == null
+        val first = state.userPersona.isBlank()
         if (state.userName.isNullOrBlank()) state.userName = if (state.locale == "en") "You" else "你"
-        if (state.userPersona == null) state.userPersona = ""
+        if (state.userPersona.isBlank()) state.userPersona = ""
         if (state.appearance.isNullOrBlank()) state.appearance = "dark"
         if (first) state.streaming = true
         state.profiles.forEach { p ->

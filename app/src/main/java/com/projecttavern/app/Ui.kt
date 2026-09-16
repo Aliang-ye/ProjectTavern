@@ -1,6 +1,8 @@
 package com.projecttavern.app
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.graphics.Typeface
 import android.util.TypedValue
 import android.view.LayoutInflater
@@ -14,12 +16,31 @@ fun Context.dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 
 
 fun letter(name: String) = name.trim().take(1).ifBlank { "?" }
 
+fun Activity.openScreen(target: Class<*>, extras: ((Intent) -> Intent)? = null) {
+    val intent = Intent(this, target)
+    val resolved = extras?.invoke(intent) ?: intent
+    startActivity(resolved)
+    overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+}
+
 fun inflateRow(parent: LinearLayout, title: String, subtitle: String, meta: String = "", onClick: () -> Unit): View {
     val v = LayoutInflater.from(parent.context).inflate(R.layout.item_row, parent, false)
-    v.findViewById<TextView>(R.id.avatar).text = letter(title)
+    val avatar = v.findViewById<TextView>(R.id.avatar)
+    val metaView = v.findViewById<TextView>(R.id.meta)
+    avatar.text = letter(title)
     v.findViewById<TextView>(R.id.title).text = title
     v.findViewById<TextView>(R.id.subtitle).text = subtitle
-    v.findViewById<TextView>(R.id.meta).text = meta
+    metaView.text = meta
+    if (meta.isBlank()) {
+        metaView.visibility = View.GONE
+    } else {
+        metaView.visibility = View.VISIBLE
+        metaView.setBackgroundResource(R.drawable.bg_chip)
+        metaView.setTextColor(ContextCompat.getColor(parent.context, R.color.candle))
+        val padH = parent.context.dp(8)
+        val padV = parent.context.dp(4)
+        metaView.setPadding(padH, padV, padH, padV)
+    }
     v.setOnClickListener { onClick() }
     parent.addView(v)
     return v

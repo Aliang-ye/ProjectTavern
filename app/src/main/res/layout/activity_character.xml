@@ -7,15 +7,16 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="64dp"
+        android:background="@color/surface"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="8dp">
 
         <ImageButton
             android:id="@+id/btnBack"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="back"
             android:src="@drawable/ic_back" />
@@ -29,14 +30,16 @@
             android:fontFamily="serif"
             android:maxLines="1"
             android:textColor="@color/candle"
-            android:textSize="16sp" />
+            android:textSize="17sp" />
 
         <TextView
             android:id="@+id/btnSave"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:padding="12dp"
-            android:textColor="@color/candle" />
+            android:background="@drawable/bg_chip_on"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="8dp"
+            android:textColor="@color/on_candle" />
     </LinearLayout>
 
     <ScrollView
@@ -53,8 +56,10 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:background="@drawable/bg_card"
                 android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:orientation="horizontal"
+                android:padding="16dp">
 
                 <TextView
                     android:id="@+id/avatar"

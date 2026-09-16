@@ -8,6 +8,7 @@ import android.view.View
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
@@ -25,9 +26,11 @@ class MainActivity : AppCompatActivity() {
             try {
                 val json = contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: return@registerForActivityResult
                 val next = gson.fromJson(json, TavernState::class.java)
-                if (next.characters != null) Store.replace(next)
+                if (next != null) Store.replace(next)
                 refresh()
-            } catch (_: Exception) {
+                Toast.makeText(this, if (Store.state.locale == "en") "Backup restored" else "备份已恢复", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, if (Store.state.locale == "en") "Import failed: ${e.message ?: "invalid JSON"}" else "导入失败：${e.message ?: "JSON 格式不正确"}", Toast.LENGTH_LONG).show()
             }
         }
 
@@ -43,19 +46,19 @@ class MainActivity : AppCompatActivity() {
             val c = Character(id = Store.nid(), name = Store.t("newCharacter"), firstMessage = "…", createdAt = Store.now(), updatedAt = Store.now())
             Store.state.characters.add(0, c)
             Store.persist()
-            startActivity(Intent(this, CharacterActivity::class.java).putExtra("id", c.id))
+            openScreen(CharacterActivity::class.java) { it.putExtra("id", c.id) }
         }
         b.panelWorlds.fab.setOnClickListener {
             val w = WorldBook(id = Store.nid(), name = Store.t("newWorld"), createdAt = Store.now(), updatedAt = Store.now())
             Store.state.worldBooks.add(0, w)
             Store.persist()
-            startActivity(Intent(this, WorldActivity::class.java).putExtra("id", w.id))
+            openScreen(WorldActivity::class.java) { it.putExtra("id", w.id) }
         }
         b.panelStories.fab.setOnClickListener {
             val st = Story(id = Store.nid(), name = Store.t("newStory"), createdAt = Store.now(), updatedAt = Store.now())
             Store.state.stories.add(0, st)
             Store.persist()
-            startActivity(Intent(this, StoryActivity::class.java).putExtra("id", st.id))
+            openScreen(StoryActivity::class.java) { it.putExtra("id", st.id) }
         }
         b.panelChats.fab.visibility = View.GONE
         b.panelCharacters.search.addTextChangedListener(SimpleWatcher { refreshCharacters() })
@@ -89,6 +92,17 @@ class MainActivity : AppCompatActivity() {
         b.bottomNav.menu.findItem(R.id.nav_stories).title = Store.t("navStories")
         b.bottomNav.menu.findItem(R.id.nav_chats).title = Store.t("navChats")
         b.bottomNav.menu.findItem(R.id.nav_settings).title = Store.t("navSettings")
+        b.statCharacters.text = "${Store.state.characters.size}"
+        b.statWorlds.text = "${Store.state.worldBooks.size}"
+        b.statStories.text = "${Store.state.stories.size}"
+        b.statChats.text = "${Store.state.conversations.size}"
+        val active = Store.activeProfile()
+        val ready = active != null && active.apiKey.isNotBlank()
+        b.statusBanner.text = if (loc == "en") {
+            if (ready) "Ready • ${Store.state.profiles.size} profiles • API configured" else "Needs setup • ${Store.state.profiles.size} profiles • add an API key"
+        } else {
+            if (ready) "已就绪 • ${Store.state.profiles.size} 个配置 • API 可用" else "待配置 • ${Store.state.profiles.size} 个配置 • 需要补充 API Key"
+        }
         setupPanel(b.panelCharacters, Store.t("characters"), Store.t("privateHint"), true)
         setupPanel(b.panelWorlds, Store.t("worlds"), Store.t("sectionsHint"), true)
         setupPanel(b.panelStories, Store.t("stories"), "", true)
@@ -117,10 +131,10 @@ class MainActivity : AppCompatActivity() {
         fill(b.panelCharacters.list) {
             list.forEach { c ->
                 inflateRow(it, c.name, c.description.ifBlank { Store.t("noDesc") }, Store.t("privateChat")) {
-                    startActivity(Intent(this, CharacterActivity::class.java).putExtra("id", c.id))
+                    openScreen(CharacterActivity::class.java) { it.putExtra("id", c.id) }
                 }.findViewById<TextView>(R.id.meta).setOnClickListener { _ ->
                     val id = Store.startConversation(c.id, null) ?: return@setOnClickListener
-                    startActivity(Intent(this, ChatActivity::class.java).putExtra("id", id))
+                    openScreen(ChatActivity::class.java) { it.putExtra("id", id) }
                 }
             }
         }
@@ -132,7 +146,7 @@ class MainActivity : AppCompatActivity() {
                 val n = Store.state.entries.count { e -> e.worldBookId == w.id }
                 val filled = listOf(w.description, w.geography, w.history, w.institutions, w.culture, w.personalNotes).count { s -> s.isNotBlank() }
                 inflateRow(it, w.name, w.description.ifBlank { "$n ${Store.t("entries")}" }, "$filled/6") {
-                    startActivity(Intent(this, WorldActivity::class.java).putExtra("id", w.id))
+                    openScreen(WorldActivity::class.java) { it.putExtra("id", w.id) }
                 }
             }
         }
@@ -144,7 +158,7 @@ class MainActivity : AppCompatActivity() {
                 val n = Store.state.participants.count { it.storyId == st.id }
                 val chats = Store.state.conversations.count { it.storyId == st.id }
                 inflateRow(it, st.name, st.description.ifBlank { Store.t("stories") }, "$n ${Store.t("people")} · $chats") {
-                    startActivity(Intent(this, StoryActivity::class.java).putExtra("id", st.id))
+                    openScreen(StoryActivity::class.java) { it.putExtra("id", st.id) }
                 }
             }
         }
@@ -162,14 +176,14 @@ class MainActivity : AppCompatActivity() {
                 it.addView(tv)
             }
             priv.forEach { c ->
-                inflateRow(it, c.title, Store.t("privateChat"), "") {
-                    startActivity(Intent(this, ChatActivity::class.java).putExtra("id", c.id))
+                inflateRow(it, c.title, Store.t("privateChat"), Store.t("open")) {
+                    openScreen(ChatActivity::class.java) { it.putExtra("id", c.id) }
                 }
             }
             story.forEach { c ->
                 val sn = Store.state.stories.find { s -> s.id == c.storyId }?.name.orEmpty()
-                inflateRow(it, c.title, sn, "") {
-                    startActivity(Intent(this, ChatActivity::class.java).putExtra("id", c.id))
+                inflateRow(it, c.title, sn, Store.t("open")) {
+                    openScreen(ChatActivity::class.java) { it.putExtra("id", c.id) }
                 }
             }
         }
@@ -189,7 +203,7 @@ class MainActivity : AppCompatActivity() {
             Store.state.profiles.add(p)
             Store.state.activeProfileId = p.id
             Store.persist()
-            startActivity(Intent(this, ProfileActivity::class.java).putExtra("id", p.id))
+            openScreen(ProfileActivity::class.java) { it.putExtra("id", p.id) }
         }
         s.btnNewPreset.setOnClickListener {
             val loc = Store.state.locale
@@ -275,11 +289,12 @@ class MainActivity : AppCompatActivity() {
         s.profileList.removeAllViews()
         Store.state.profiles.forEach { p ->
             val kind = if (p.provider == "claude") "Claude" else "OpenAI"
-            val star = if (p.id == Store.state.activeProfileId) "  ★" else ""
-            inflateRow(s.profileList, p.name, "$kind · ${p.model}$star", "") {
+            val star = if (p.id == Store.state.activeProfileId) "★" else ""
+            val meta = if (star.isBlank()) kind else "$kind $star"
+            inflateRow(s.profileList, p.name, "$kind · ${p.model}", meta) {
                 Store.state.activeProfileId = p.id
                 Store.persist()
-                startActivity(Intent(this, ProfileActivity::class.java).putExtra("id", p.id))
+                openScreen(ProfileActivity::class.java) { it.putExtra("id", p.id) }
             }
         }
         s.labelPresets.text = Store.t("presets")

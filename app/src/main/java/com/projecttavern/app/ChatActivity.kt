@@ -36,6 +36,13 @@ class ChatActivity : AppCompatActivity() {
             b.debugBox.visibility = if (debugOn) View.VISIBLE else View.GONE
             if (debugOn) b.debugBox.text = Engine.build(convId).debug
         }
+        b.btnSend.setOnLongClickListener {
+            if (busy) stop()
+            else if (b.etDraft.text.toString().isBlank()) {
+                Toast.makeText(this, Store.t("writeAction"), Toast.LENGTH_SHORT).show()
+            }
+            true
+        }
         if (Store.state.developerMode) {
             debugOn = true
             b.debugBox.visibility = View.VISIBLE
@@ -51,7 +58,13 @@ class ChatActivity : AppCompatActivity() {
         val c = conv() ?: return finish()
         val ch = Store.state.characters.find { it.id == c.characterId }
         b.headerTitle.text = ch?.name ?: c.title
-        b.headerSub.text = if (c.storyId == null) Store.t("privateChat") else Store.state.stories.find { it.id == c.storyId }?.name.orEmpty()
+        val contextText = if (c.storyId == null) Store.t("privateChat") else Store.state.stories.find { it.id == c.storyId }?.name ?: Store.t("stories")
+        val live = if (busy) {
+            if (Store.state.locale == "en") "Streaming" else "流式中"
+        } else {
+            if (Store.state.locale == "en") "Ready" else "就绪"
+        }
+        b.headerSub.text = "$contextText · $live"
         b.btnDebug.text = Store.t("debugger")
         b.etDraft.hint = Store.t("writeAction")
         paintSend()

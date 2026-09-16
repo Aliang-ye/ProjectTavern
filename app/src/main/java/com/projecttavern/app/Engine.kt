@@ -54,13 +54,51 @@ object Engine {
         return g?.content ?: m.content
     }
 
+    private fun summarizeHistoricText(text: String): String {
+        val normalized = Regex("\\s+").replace(text.trim(), " ")
+        if (normalized.length <= 220) return normalized
+        return normalized.take(220).trimEnd() + "…"
+    }
+
+    private fun memoizeHistorySummary(conversationId: String, history: List<ChatMessage>) {
+        if (!Store.state.autoSummary || history.size < 6) return
+        val old = history.dropLast(6)
+        if (old.isEmpty()) return
+        val summary = summarizeHistoricText(
+            old.joinToString("\n") { if (it.role == "assistant") "assistant: ${display(it)}" else "user: ${it.content}" }
+        )
+        val existing = Store.state.memories.firstOrNull { it.conversationId == conversationId }
+        if (existing == null) {
+            Store.state.memories.add(Memory(Store.nid(), conversationId, "CHAT_SUMMARY", summary, Store.now()))
+        } else {
+            existing.content = summary
+            existing.updatedAt = Store.now()
+        }
+    }
+
+    private fun trimHistoryForContext(history: List<ChatMessage>, preset: Preset?): List<ChatMessage> {
+        if (preset == null || preset.contextLimit <= 0) return history
+        val maxChars = preset.contextLimit.coerceAtLeast(4096)
+        val kept = history.toMutableList()
+        while (kept.size > 4) {
+            val text = kept.joinToString("\n") { if (it.role == "assistant") display(it) else it.content }
+            if (text.length <= maxChars) break
+            kept.removeFirst()
+        }
+        if (kept.size != history.size) {
+            memoizeHistorySummary(history.firstOrNull()?.conversationId ?: "", history)
+        }
+        return kept
+    }
+
     fun build(conversationId: String): PromptBuilt {
         val s = Store.state
         val conv = s.conversations.find { it.id == conversationId } ?: return PromptBuilt(emptyList(), "")
         val ch = s.characters.find { it.id == conv.characterId }
         val preset = s.presets.find { it.id == conv.presetId } ?: Store.localePresets().firstOrNull()
         val history = visible(conversationId, conv.tipMessageId)
-        val histText = history.joinToString("\n") { if (it.role == "assistant") display(it) else it.content }
+        val contextHistory = trimHistoryForContext(history, preset)
+        val histText = contextHistory.joinToString("\n") { if (it.role == "assistant") display(it) else it.content }
         val worldIds = if (conv.worldBookIds.isNotEmpty()) conv.worldBookIds else {
             s.characterWorldBooks.filter { it.characterId == conv.characterId }.map { it.worldBookId }
         }
@@ -102,11 +140,11 @@ object Engine {
             if (it.content.isNotBlank()) sys.append("## MEMORY\n").append(it.content).append("\n\n")
         }
         val messages = mutableListOf("system" to sys.toString().trim())
-        for (m in history) {
+        for (m in contextHistory) {
             val role = if (m.role == "assistant") "assistant" else "user"
             messages.add(role to if (m.role == "assistant") display(m) else m.content)
         }
-        val debug = "blocks=${messages.size} worlds=${worlds.joinToString { it.name }} entries=${entries.joinToString { it.name }}"
+        val debug = "blocks=${messages.size} worlds=${worlds.joinToString { it.name }} entries=${entries.joinToString { it.name }} history=${contextHistory.size}"
         return PromptBuilt(messages, debug)
     }
 }

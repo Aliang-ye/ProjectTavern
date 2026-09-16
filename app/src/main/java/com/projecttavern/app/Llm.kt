@@ -54,21 +54,25 @@ object Llm {
         preset: Preset,
         onDelta: (String) -> Unit,
     ): String {
+        val apiKey = p.apiKey.trim()
+        require(apiKey.isNotBlank()) { "OpenAI API key is required" }
+
         val arr = JSONArray()
         messages.forEach { (role, content) ->
             arr.put(JSONObject().put("role", role).put("content", content))
         }
+        val effectiveMaxTokens = if (preset.responseBudget > 0) minOf(preset.maxTokens, preset.responseBudget) else preset.maxTokens
         val body = JSONObject()
             .put("model", p.model)
             .put("stream", true)
             .put("temperature", preset.temperature)
             .put("top_p", preset.topP)
-            .put("max_tokens", preset.maxTokens)
+            .put("max_tokens", effectiveMaxTokens)
             .put("messages", arr)
             .toString()
         val req = Request.Builder()
             .url(openaiUrl(p))
-            .addHeader("Authorization", "Bearer ${p.apiKey}")
+            .addHeader("Authorization", "Bearer " + p.apiKey)
             .addHeader("Content-Type", "application/json")
             .post(body.toRequestBody("application/json".toMediaType()))
             .build()
@@ -88,12 +92,13 @@ object Llm {
         messages.filter { it.first != "system" }.forEach { (role, content) ->
             arr.put(JSONObject().put("role", role).put("content", content))
         }
+        val effectiveMaxTokens = if (preset.responseBudget > 0) minOf(preset.maxTokens, preset.responseBudget) else preset.maxTokens
         val body = JSONObject()
             .put("model", p.model)
             .put("stream", true)
             .put("temperature", preset.temperature)
             .put("top_p", preset.topP)
-            .put("max_tokens", preset.maxTokens)
+            .put("max_tokens", effectiveMaxTokens)
             .put("messages", arr)
         if (system.isNotBlank()) body.put("system", system)
         val req = Request.Builder()
@@ -119,25 +124,33 @@ object Llm {
             res.close()
             throw RuntimeException(mapStatus(res.code, err))
         }
+        val bodyText = res.body?.string().orEmpty()
+        res.close()
+        currentCall = null
+        if (bodyText.isBlank()) return ""
+
         val full = StringBuilder()
-        res.body?.source()?.use { src ->
-            while (!src.exhausted()) {
-                val line = src.readUtf8Line() ?: break
-                val s = line.trim()
-                if (!s.startsWith("data:")) continue
-                val data = s.removePrefix("data:").trim()
-                if (data.isEmpty() || data == "[DONE]") continue
-                try {
-                    val piece = pick(JSONObject(data))
-                    if (piece.isNotEmpty()) {
-                        full.append(piece)
-                        onDelta(piece)
-                    }
-                } catch (_: Exception) {
+        var sawData = false
+        for (rawLine in bodyText.lines()) {
+            val s = rawLine.trim()
+            if (!s.startsWith("data:")) continue
+            val data = s.removePrefix("data:").trim()
+            if (data.isEmpty() || data == "[DONE]") continue
+            sawData = true
+            try {
+                val piece = pick(JSONObject(data))
+                if (piece.isNotEmpty()) {
+                    full.append(piece)
+                    onDelta(piece)
                 }
+            } catch (e: Exception) {
+                val preview = data.take(180)
+                throw RuntimeException("Malformed model stream payload: $preview", e)
             }
         }
-        currentCall = null
+        if (!sawData) {
+            throw RuntimeException("Model returned no stream data: ${bodyText.take(180)}")
+        }
         return full.toString()
     }
 
