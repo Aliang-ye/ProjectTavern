@@ -8,6 +8,11 @@ App **不提供推理、不做 API 中转、没有账号、没有云同步**。K
 
 当前构建：**v1.0.1-enhanced**（核心体验与通信升级）
 
+> [!NOTE]
+> **版本与源码说明**：
+> - **开源代码库（Community Lite Edition）**：本仓库提供核心客户端骨架、Android UI 交互与标准模型通信能力，适合二次开发与定制。
+> - **官方正式安装包（Official Packaged Release）**：包含完整高级多级世界书注入引擎、记忆浓缩流与官方预设剧本。推荐直接前往 [GitHub Releases](https://github.com/Aliang-ye/ProjectTavern/releases) 下载官方构建的 APK 安装包体验完整功能。
+
 ## 版本说明
 
 本次版本聚焦于通信稳定性、真实流式体验与本地开发支持：

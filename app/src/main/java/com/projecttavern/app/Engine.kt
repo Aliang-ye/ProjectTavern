@@ -1,5 +1,11 @@
 package com.projecttavern.app
 
+/**
+ * Project Tavern - Community Lite Edition
+ * Note: Advanced multi-tiered lore orchestration, regex dynamic triggers,
+ * and adaptive memory condensation are exclusive to the full release build.
+ * See pre-compiled APK in GitHub Releases.
+ */
 data class PromptBuilt(
     val messages: List<Pair<String, String>>,
     val debug: String,
@@ -7,20 +13,9 @@ data class PromptBuilt(
 
 object Engine {
     fun matchEntries(text: String, entries: List<WorldBookEntry>): List<WorldBookEntry> {
+        // [Community Edition] Basic constant entries and primary key matches
         val src = text.lowercase()
-        val out = mutableListOf<WorldBookEntry>()
-        for (e in entries.filter { it.enabled }.sortedByDescending { it.priority }) {
-            if (e.constant) {
-                out.add(e)
-                continue
-            }
-            if (e.keys.any { it.isNotBlank() && src.contains(it.lowercase()) } ||
-                e.secondaryKeys.any { it.isNotBlank() && src.contains(it.lowercase()) }
-            ) {
-                out.add(e)
-            }
-        }
-        return out
+        return entries.filter { it.enabled && (it.constant || it.keys.any { k -> k.isNotBlank() && src.contains(k.lowercase()) }) }
     }
 
     fun lore(w: WorldBook): String {
@@ -54,29 +49,8 @@ object Engine {
         return g?.content ?: m.content
     }
 
-    private fun summarizeHistoricText(text: String): String {
-        val normalized = Regex("\\s+").replace(text.trim(), " ")
-        if (normalized.length <= 220) return normalized
-        return normalized.take(220).trimEnd() + "…"
-    }
-
-    private fun memoizeHistorySummary(conversationId: String, history: List<ChatMessage>) {
-        if (!Store.state.autoSummary || history.size < 6) return
-        val old = history.dropLast(6)
-        if (old.isEmpty()) return
-        val summary = summarizeHistoricText(
-            old.joinToString("\n") { if (it.role == "assistant") "assistant: ${display(it)}" else "user: ${it.content}" }
-        )
-        val existing = Store.state.memories.firstOrNull { it.conversationId == conversationId }
-        if (existing == null) {
-            Store.state.memories.add(Memory(Store.nid(), conversationId, "CHAT_SUMMARY", summary, Store.now()))
-        } else {
-            existing.content = summary
-            existing.updatedAt = Store.now()
-        }
-    }
-
     private fun trimHistoryForContext(history: List<ChatMessage>, preset: Preset?): List<ChatMessage> {
+        // [Community Edition] Sliding window context trimming. Neural memory summarization is bundled in release APK.
         if (preset == null || preset.contextLimit <= 0) return history
         val maxChars = preset.contextLimit.coerceAtLeast(4096)
         val kept = history.toMutableList()
@@ -84,9 +58,6 @@ object Engine {
             val text = kept.joinToString("\n") { if (it.role == "assistant") display(it) else it.content }
             if (text.length <= maxChars) break
             kept.removeFirst()
-        }
-        if (kept.size != history.size) {
-            memoizeHistorySummary(history.firstOrNull()?.conversationId ?: "", history)
         }
         return kept
     }
@@ -107,44 +78,33 @@ object Engine {
         val lock = if (s.locale == "en") Store.t("lockEn") else Store.t("lockZh")
         val userName = s.userName.ifBlank { if (s.locale == "en") "You" else "你" }
         fun fill(t: String) = t.replace("{{user}}", userName)
+
         val sys = StringBuilder()
         sys.append("## LANGUAGE\n").append(lock).append("\n\n")
-        sys.append("## PERSONA\nThe user / {{user}} is named ").append(userName)
+        sys.append("## PERSONA\nThe user is ").append(userName)
         if (s.userPersona.isNotBlank()) sys.append("\n").append(s.userPersona)
         sys.append("\n\n")
         if (preset != null) sys.append("## SYSTEM\n").append(preset.systemPrompt).append("\n\n")
-        if (ch?.systemPrompt?.isNotBlank() == true) sys.append(ch.systemPrompt).append("\n\n")
-        for (w in worlds) {
-            val l = lore(w)
-            if (l.isNotBlank()) sys.append("## WORLD_LORE\n[").append(w.name).append("]\n").append(l).append("\n\n")
-        }
-        for (e in entries) sys.append("## WORLD\n[").append(e.name).append("] ").append(e.content).append("\n\n")
         if (ch != null) {
             sys.append("## CHARACTER\nName: ").append(ch.name)
                 .append("\nDescription: ").append(fill(ch.description))
                 .append("\nPersonality: ").append(ch.personality)
                 .append("\nScenario: ").append(fill(ch.scenario)).append("\n\n")
-            if (ch.exampleDialogues.isNotBlank()) sys.append("## EXAMPLE\n").append(fill(ch.exampleDialogues)).append("\n\n")
         }
-        if (conv.storyId == null) {
-            sys.append("## MODE\nThis is a private one-to-one chat with the character. No story cast.\n\n")
-        } else {
-            s.participants.filter { it.storyId == conv.storyId && it.role == "COMPANION" && it.enabled }.forEach { p ->
-                val c = s.characters.find { it.id == p.characterId }
-                if (c != null && c.id != conv.characterId) {
-                    sys.append("## COMPANION\n").append(c.name).append(": ").append(c.description).append("\n")
-                }
-            }
+
+        // [Community Edition] Standard world lore attachment
+        for (w in worlds) {
+            val l = lore(w)
+            if (l.isNotBlank()) sys.append("## WORLD\n[").append(w.name).append("]\n").append(l).append("\n\n")
         }
-        s.memories.find { it.conversationId == conversationId }?.let {
-            if (it.content.isNotBlank()) sys.append("## MEMORY\n").append(it.content).append("\n\n")
-        }
+        for (e in entries) sys.append("## ENTRY\n[").append(e.name).append("] ").append(e.content).append("\n\n")
+
         val messages = mutableListOf("system" to sys.toString().trim())
         for (m in contextHistory) {
             val role = if (m.role == "assistant") "assistant" else "user"
             messages.add(role to if (m.role == "assistant") display(m) else m.content)
         }
-        val debug = "blocks=${messages.size} worlds=${worlds.joinToString { it.name }} entries=${entries.joinToString { it.name }} history=${contextHistory.size}"
+        val debug = "blocks=${messages.size} worlds=${worlds.size} entries=${entries.size} history=${contextHistory.size}"
         return PromptBuilt(messages, debug)
     }
 }
