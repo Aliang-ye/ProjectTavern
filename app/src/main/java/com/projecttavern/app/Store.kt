@@ -50,10 +50,15 @@ object Store {
         return copy
     }
 
+    private val ioExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+
     fun persist() {
-        try {
-            file.writeText(gson.toJson(state))
-        } catch (_: Exception) {
+        val json = gson.toJson(state)
+        ioExecutor.execute {
+            try {
+                file.writeText(json)
+            } catch (_: Exception) {
+            }
         }
         listeners.forEach { it() }
     }
@@ -131,103 +136,100 @@ object Store {
         persist()
     }
 
-    fun ensureWorldGm(worldId: String, worldName: String): Character {
-        val existing = state.characters.find { it.id == "gm-$worldId" }
-            ?: state.characters.find { defaultWorldId(it.id) == worldId && (it.tags.contains("GM") || it.name.endsWith("GM")) }
-        val isEn = state.locale == "en"
-        val cleanName = worldName.trim().ifBlank { if (isEn) "New World" else "新世界" }
-
-        if (existing != null) {
-            val oldName = existing.name.removeSuffix(" · GM").trim()
-            val hasPlaceholder = existing.description.contains("新世界") || existing.description.contains("New World")
-                || existing.systemPrompt.contains("新世界") || existing.systemPrompt.contains("New World")
-            if (oldName != cleanName || hasPlaceholder) {
-                existing.name = "$cleanName · GM"
-                val targets = listOf(oldName, "新世界", "New World").filter { it.isNotBlank() && it != cleanName }
-                for (target in targets) {
-                    existing.description = existing.description.replace("【$target】", "【$cleanName】").replace(target, cleanName)
-                    existing.scenario = existing.scenario.replace("【$target】", "【$cleanName】").replace(target, cleanName)
-                    existing.firstMessage = existing.firstMessage.replace("【$target】", "【$cleanName】").replace(target, cleanName)
-                    existing.systemPrompt = existing.systemPrompt.replace("【$target】", "【$cleanName】").replace(target, cleanName)
-                }
-                existing.updatedAt = now()
-                persist()
-            }
-            return existing
-        }
-        val gm = Character(
-            id = "gm-$worldId",
-            name = "$cleanName · GM",
-            description = if (isEn) "Game Master and narrator for $cleanName." else "负责主持与引导【$cleanName】的故事发展、环境描写与NPC互动。",
-            personality = if (isEn) "Immersive, descriptive, observant storyteller." else "客观、富有沉浸感、生动的世界GM与故事讲述者。",
-            scenario = if (isEn) "Guiding the journey in $cleanName." else "身处于【$cleanName】之中。",
-            firstMessage = if (isEn) "Welcome to $cleanName. Where would you like to begin your adventure?" else "「欢迎来到【$cleanName】。命运的卷轴已然展开，你想从哪里开始你的冒险？」",
-            systemPrompt = if (isEn) """
-                You are the Game Master and World Narrator for $cleanName.
-                Guide the narrative, depict scenery and NPCs vividly, and react to {{user}}'s actions without making decisions for {{user}}.
-            """.trimIndent() else """
-                你是【$cleanName】的地下城主/世界引导者（Game Master / Narrator）。
-                你的任务：
-                1. 根据世界书的背景设定与规则，生动描绘玩家所处的环境、遭遇的角色与发生的事件；
-                2. 维持世界观的一致性与沉浸感，严格遵循世界书的地理、历史与常态设定；
-                3. 推动剧情发展，在适当时候给予玩家选择与悬念，但绝不代替玩家（{{user}}）做出决定或发言；
-                4. 采用小说化第三人称或旁白视角，语言优美、充满氛围感。
-            """.trimIndent(),
-            tags = mutableListOf("GM", "世界引导"),
+    fun startWorldWillConversation(worldBookId: String): String? {
+        val w = state.worldBooks.find { it.id == worldBookId } ?: return null
+        val willName = w.willName.ifBlank { if (state.locale == "en") "World Will" else "世界意志" }
+        val conv = Conversation(
+            id = nid(),
+            storyId = null,
+            characterId = "",
+            worldBookIds = mutableListOf(w.id),
+            presetId = state.presets.firstOrNull { it.locale == state.locale }?.id ?: state.presets.firstOrNull()?.id ?: "preset-default",
+            personaId = state.activePersonaId,
+            title = "${w.name} · $willName",
             createdAt = now(),
             updatedAt = now(),
         )
-        state.characters.add(gm)
-        setDefaultWorld(gm.id, worldId)
+        val greeting = w.willFirstMessage.ifBlank {
+            if (state.locale == "en") "Welcome to ${w.name}." else "「欢迎来到【${w.name}】。世界的心跳在此刻与你共鸣，你想从何处开启你的故事？」"
+        }
+        val greet = ChatMessage(
+            id = nid(),
+            conversationId = conv.id,
+            parentId = null,
+            role = "assistant",
+            content = greeting,
+            generations = mutableListOf(Generation(nid(), greeting, "greeting", "local", now())),
+            generationIndex = 0,
+            createdAt = now(),
+        )
+        conv.tipMessageId = greet.id
+        state.conversations.add(0, conv)
+        state.messages.add(greet)
         persist()
-        return gm
+        return conv.id
     }
 
     fun startConversation(characterId: String? = null, storyId: String? = null, personaId: String? = null): String? {
-        val cid = if (!characterId.isNullOrBlank()) {
-            characterId
-        } else if (storyId != null) {
-            val story = state.stories.find { it.id == storyId }
+        val story = if (storyId != null) state.stories.find { it.id == storyId } else null
+        val effectivePresetId = state.presets.firstOrNull { it.locale == state.locale }?.id ?: state.presets.firstOrNull()?.id ?: "preset-default"
+        if (characterId.isNullOrBlank() && storyId != null) {
             val main = state.participants.find { it.storyId == storyId && it.role == "MAIN_CHARACTER" }
                 ?: state.participants.firstOrNull { it.storyId == storyId }
             if (main != null) {
-                main.characterId
+                return startConversation(main.characterId, storyId, personaId)
             } else {
                 val wid = story?.worldBookIds?.firstOrNull() ?: state.worldBooks.firstOrNull()?.id
                 val world = state.worldBooks.find { it.id == wid }
-                if (world != null) {
-                    ensureWorldGm(world.id, world.name).id
-                } else state.characters.firstOrNull()?.id
+                val willName = world?.willName?.ifBlank { null } ?: if (state.locale == "en") "World Will" else "世界意志"
+                val conv = Conversation(
+                    id = nid(),
+                    storyId = storyId,
+                    characterId = "",
+                    worldBookIds = story?.worldBookIds ?: mutableListOf(),
+                    presetId = effectivePresetId,
+                    personaId = personaId ?: story?.personaId ?: state.activePersonaId,
+                    title = "${story?.name ?: "Story"} · $willName",
+                    createdAt = now(),
+                    updatedAt = now(),
+                )
+                val greeting = world?.willFirstMessage?.ifBlank { null } ?: if (state.locale == "en") "The story begins in ${world?.name ?: "this world"}." else "「故事在【${world?.name ?: "这个世界"}】拉开帷幕。你打算迈向何方？」"
+                val greet = ChatMessage(
+                    id = nid(),
+                    conversationId = conv.id,
+                    parentId = null,
+                    role = "assistant",
+                    content = greeting,
+                    generations = mutableListOf(Generation(nid(), greeting, "greeting", "local", now())),
+                    generationIndex = 0,
+                    createdAt = now(),
+                )
+                conv.tipMessageId = greet.id
+                state.conversations.add(0, conv)
+                state.messages.add(greet)
+                persist()
+                return conv.id
             }
-        } else state.characters.firstOrNull()?.id
-
-        val ch = state.characters.find { it.id == cid } ?: return null
+        }
+        val ch = state.characters.find { it.id == characterId } ?: return null
         val worlds = mutableListOf<String>()
-        defaultWorldId(ch.id)?.let { worlds.add(it) }
         if (storyId != null) {
-            state.stories.find { it.id == storyId }?.worldBookIds?.let { worlds.addAll(it) }
+            story?.worldBookIds?.let { worlds.addAll(it) }
+        } else {
+            defaultWorldId(ch.id)?.let { worlds.add(it) }
         }
-        val greeting = if (ch.alternateGreetings.isNotEmpty() && Math.random() > 0.55) {
-            ch.alternateGreetings.random()
-        } else ch.firstMessage.ifBlank {
-            if (state.locale == "en") "Hello, traveler." else "你好，旅人。"
-        }
-        val presetId = localePresets().firstOrNull()?.id ?: state.presets.firstOrNull()?.id.orEmpty()
-        val storyName = storyId?.let { sid -> state.stories.find { it.id == sid }?.name }
-        val effectivePersonaId = personaId
-            ?: (if (storyId != null) state.stories.find { it.id == storyId }?.personaId else null)
-            ?: state.activePersonaId
         val conv = Conversation(
             id = nid(),
             storyId = storyId,
             characterId = ch.id,
-            personaId = effectivePersonaId,
-            worldBookIds = worlds.distinct().toMutableList(),
-            presetId = presetId,
-            title = if (storyName != null) "$storyName · ${ch.name}" else ch.name,
+            worldBookIds = worlds,
+            presetId = effectivePresetId,
+            personaId = personaId ?: story?.personaId ?: state.activePersonaId,
+            title = if (story != null) "${story.name} · ${ch.name}" else ch.name,
             createdAt = now(),
             updatedAt = now(),
         )
+        val greeting = ch.firstMessage.ifBlank { if (state.locale == "en") "Hello." else "你好。" }
         val greet = ChatMessage(
             id = nid(),
             conversationId = conv.id,
@@ -259,6 +261,9 @@ object Store {
         if (state.personas == null) state.personas = mutableListOf()
         if (state.memories == null) state.memories = mutableListOf()
 
+        state.characters.removeAll { it.id.startsWith("gm-") || (it.tags.contains("GM") && it.name.contains("GM")) }
+        state.characterWorldBooks.removeAll { it.characterId.startsWith("gm-") }
+
         state.characters.forEach {
             if (it.tags == null) it.tags = mutableListOf()
             if (it.alternateGreetings == null) it.alternateGreetings = mutableListOf()
@@ -271,6 +276,36 @@ object Store {
         }
         state.messages.forEach {
             if (it.generations == null) it.generations = mutableListOf()
+        }
+
+        val hasLegacyPresets = state.presets.any { it.id == "preset-novel" || it.id == "preset-creative" }
+        if (hasLegacyPresets) {
+            state.presets.removeAll { it.id.startsWith("preset-novel") || it.id.startsWith("preset-creative") || it.id.startsWith("preset-fast") || it.id.startsWith("preset-reason") }
+        }
+        if (state.presets.none { it.id == "preset-default" }) {
+            state.presets.add(0, Preset("preset-default", "默认模式", "zh", 0.8, 0.95, 300, 32000, 300, "自然生动地推进剧情，描写动作、光线、气味与停顿。不替用户行动。一次回复控制在 150–300 字左右。"))
+        }
+        if (state.presets.none { it.id == "preset-default-en" }) {
+            state.presets.add(Preset("preset-default-en", "Default", "en", 0.8, 0.95, 300, 32000, 300, "Vividly and naturally advance the story with immersive prose. Never act for {{user}}."))
+        }
+        state.conversations.forEach { c ->
+            if (state.presets.none { it.id == c.presetId }) {
+                c.presetId = if (state.locale == "en") "preset-default-en" else "preset-default"
+            }
+        }
+
+        state.worldBooks.forEach { w ->
+            if (w.willName.isNullOrBlank()) w.willName = if (state.locale == "en") "World Will" else "世界意志"
+            if (w.willFirstMessage.isNullOrBlank()) {
+                w.willFirstMessage = if (state.locale == "en") "Welcome to ${w.name}. Where would you like to begin your journey?" else "「世界的心跳在此刻与你共鸣。你想从何处开启在【${w.name}】的故事？」"
+            }
+            if (w.willSystemPrompt.isNullOrBlank()) {
+                w.willSystemPrompt = if (state.locale == "en") {
+                    "You are the World Will and Narrator for ${w.name}. Vividly describe environments, atmosphere, and NPCs. React to {{user}}'s actions, but never speak or act on behalf of {{user}}."
+                } else {
+                    "你是【${w.name}】的【世界意志】与故事讲述者（World Will / Narrator）。\n根据世界法则与设定，生动描绘环境与NPC，推动情节，绝不代替玩家（{{user}}）发言或行动。"
+                }
+            }
         }
 
         val first = state.userPersona.isBlank()
@@ -293,23 +328,12 @@ object Store {
         if (state.activePersonaId == null || state.personas.none { it.id == state.activePersonaId }) {
             state.activePersonaId = state.personas.firstOrNull()?.id
         }
-        state.worldBooks.forEach { w ->
-            ensureWorldGm(w.id, w.name)
-        }
         state.profiles.forEach { p ->
             if (p.provider != "claude") p.provider = "openai"
-        }
-        val seedPresets = seed().presets
-        seedPresets.forEach { p ->
-            if (state.presets.none { it.id == p.id }) state.presets.add(p)
         }
         state.presets.forEach { if (it.locale.isBlank()) it.locale = "zh" }
         if (state.locale != "en") state.locale = "zh"
         if (state.appearance !in listOf("dark", "light", "system")) state.appearance = "dark"
-        if (state.userName.isBlank()) {
-            state.userName = if (state.locale == "en") "You" else "你"
-            state.streaming = true
-        }
         applyAppearance()
     }
 
@@ -365,18 +389,11 @@ object Store {
             history = "存在已久，来客从不问过往出处。",
             institutions = "酒馆内禁止私斗。",
             culture = "用故事换取美酒。",
-            createdAt = t0,
-            updatedAt = t0,
-        )
-        val gm = Character(
-            id = "gm-world-dusk",
-            name = "暮色酒馆 · GM",
-            description = "负责主持与引导【暮色酒馆】世界的故事发展、环境描写与NPC互动。",
-            personality = "客观、富有沉浸感、生动的世界GM与故事讲述者。",
-            scenario = "身处于【暮色酒馆】之中，关注着旅人的每一步选择。",
-            firstMessage = "「推开酒馆厚重的橡木门，湿冷的夜雨被隔绝在身后。吧台里的艾莉丝抬头看了你一眼，角落里的莱恩仍在擦拭着剑鞘。你打算走向何处？」",
-            systemPrompt = "你是【暮色酒馆】的地下城主/世界引导者（Game Master / Narrator）。维持沉浸感与酒馆氛围，不替用户行动。",
-            tags = mutableListOf("GM", "世界引导"),
+            willName = "世界意志",
+            willDescription = "负责主持与引导【暮色酒馆】世界的故事发展、环境描写与NPC互动。",
+            willScenario = "身处于【暮色酒馆】之中，关注着旅人的每一步选择。",
+            willFirstMessage = "「推开酒馆厚重的橡木门，湿冷的夜雨被隔绝在身后。吧台里的艾莉丝抬头看了你一眼，角落里的莱恩仍在擦拭着剑鞘。你打算走向何处？」",
+            willSystemPrompt = "你是【暮色酒馆】的世界意志与环境讲述者（World Will / Narrator）。维持沉浸感与酒馆氛围，不替用户行动。",
             createdAt = t0,
             updatedAt = t0,
         )
@@ -389,10 +406,9 @@ object Store {
             updatedAt = t0,
         )
         return TavernState(
-            characters = mutableListOf(alice, raen, gm),
+            characters = mutableListOf(alice, raen),
             characterWorldBooks = mutableListOf(
                 CharacterWorldBook("char-alice", "world-dusk", true),
-                CharacterWorldBook(gm.id, "world-dusk", true),
             ),
             personas = mutableListOf(defPersona),
             activePersonaId = defPersona.id,
@@ -414,21 +430,15 @@ object Store {
                 StoryParticipant("part-comp", "story-first", "char-raen", "COMPANION", true, 50),
             ),
             conversations = mutableListOf(
-                Conversation(id = "conv-welcome", storyId = "story-first", characterId = "char-alice", worldBookIds = mutableListOf("world-dusk"), presetId = "preset-novel", personaId = defPersona.id, title = "第一夜 · 进门", tipMessageId = "msg-greet", createdAt = t0, updatedAt = t0),
+                Conversation(id = "conv-welcome", storyId = "story-first", characterId = "char-alice", worldBookIds = mutableListOf("world-dusk"), presetId = "preset-default", personaId = defPersona.id, title = "第一夜 · 进门", tipMessageId = "msg-greet", createdAt = t0, updatedAt = t0),
             ),
             messages = mutableListOf(
                 ChatMessage("msg-greet", "conv-welcome", null, "assistant", alice.firstMessage,
                     mutableListOf(Generation("gen-greet", alice.firstMessage, "greeting", "local", t0)), 0, t0),
             ),
             presets = mutableListOf(
-                Preset("preset-novel", "小说模式", "zh", 0.9, 0.95, 900, 32000, 900, "以第三人称有限视角写小说。描写动作、光线、气味与停顿。对话用中文引号。不要替用户行动。一次回复控制在 150–400 字。"),
-                Preset("preset-creative", "创意模式", "zh", 1.05, 0.96, 700, 24000, 700, "更奔放、意象更密。仍保持角色声音，不跳出设定。"),
-                Preset("preset-fast", "快速模式", "zh", 0.7, 0.9, 400, 16000, 400, "短句，快节奏。少描写，多对话。"),
-                Preset("preset-reason", "推理模式", "zh", 0.55, 0.85, 1100, 32000, 1100, "先在心里核对设定、前文与世界书，再写正文。不要把思考过程写出来。保持角色声音，不替用户行动。"),
-                Preset("preset-novel-en", "Novel", "en", 0.9, 0.95, 900, 32000, 900, "Write in close third person. Describe gesture, light, smell, and pause. Dialogue in quotation marks. Never act for the user."),
-                Preset("preset-creative-en", "Creative", "en", 1.05, 0.96, 700, 24000, 700, "Bolder imagery. Keep the character's voice."),
-                Preset("preset-fast-en", "Fast", "en", 0.7, 0.9, 400, 16000, 400, "Short sentences. Fast pace. More dialogue, less description."),
-                Preset("preset-reason-en", "Reasoning", "en", 0.55, 0.85, 1100, 32000, 1100, "Silently check continuity, lore, and character voice, then write. Do not show chain-of-thought. Never act for the user."),
+                Preset("preset-default", "默认模式", "zh", 0.8, 0.95, 300, 32000, 300, "自然生动地推进剧情，描写动作、光线、气味与停顿。不替用户行动。一次回复控制在 150–300 字左右。"),
+                Preset("preset-default-en", "Default", "en", 0.8, 0.95, 300, 32000, 300, "Vividly and naturally advance the story with immersive prose. Never act for {{user}}."),
             ),
             locale = "zh",
             appearance = "dark",

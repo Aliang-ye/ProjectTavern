@@ -3,6 +3,7 @@ package com.projecttavern.app
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.View
 import android.widget.ArrayAdapter
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -11,14 +12,16 @@ import com.projecttavern.app.databinding.ActivityCharacterBinding
 class CharacterActivity : AppCompatActivity() {
     private lateinit var b: ActivityCharacterBinding
     private lateinit var id: String
+    private var isNew: Boolean = false
+    private lateinit var draftCharacter: Character
 
     private val pickAvatar = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
             val path = saveAvatar(this, id, uri)
             if (path != null) {
-                current()?.avatar = path
-                current()?.updatedAt = Store.now()
-                Store.persist()
+                current().avatar = path
+                current().updatedAt = Store.now()
+                if (!isNew) Store.persist()
                 bind()
             }
         }
@@ -26,40 +29,63 @@ class CharacterActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        id = intent.getStringExtra("id") ?: return finish()
+        isNew = intent.getBooleanExtra("isNew", false)
+        id = intent.getStringExtra("id") ?: Store.nid()
+
+        if (isNew) {
+            val defaultGreeting = if (Store.state.locale == "en") "Hello, traveler. What brings you here?" else "你好，旅人。找我有什么事吗？"
+            draftCharacter = Character(
+                id = id,
+                name = "",
+                firstMessage = defaultGreeting,
+                createdAt = Store.now(),
+                updatedAt = Store.now()
+            )
+        } else {
+            val existing = Store.state.characters.find { it.id == id }
+            if (existing == null) {
+                finish()
+                return
+            }
+            draftCharacter = existing
+        }
+
         b = ActivityCharacterBinding.inflate(layoutInflater)
         setContentView(b.root)
         b.btnBack.setOnClickListener { finish() }
-        b.btnSave.setOnClickListener { save(); finish() }
+        b.btnSave.setOnClickListener {
+            save(commitToStore = true)
+            finish()
+        }
         b.avatarContainer.setOnClickListener { pickAvatar.launch("image/*") }
         b.tapAvatar.setOnClickListener { pickAvatar.launch("image/*") }
         b.avatarContainer.setOnLongClickListener {
             val c = current()
-            if (c?.avatar != null) {
+            if (c.avatar != null) {
                 confirm(this, Store.t("deleteQ")) {
                     c.avatar = null
-                    Store.persist()
+                    if (!isNew) Store.persist()
                     bind()
                 }
             }
             true
         }
         b.btnPrivate.setOnClickListener {
-            save()
+            save(commitToStore = true)
             val cid = Store.startConversation(id, null) ?: return@setOnClickListener
             startActivity(Intent(this, ChatActivity::class.java).putExtra("id", cid))
         }
         b.btnExport.setOnClickListener {
-            save()
-            val ch = current() ?: return@setOnClickListener
+            save(commitToStore = !isNew)
+            val ch = current()
             val json = Store.exportCharacter(ch)
             val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
             cm.setPrimaryClip(android.content.ClipData.newPlainText("character", json))
             android.widget.Toast.makeText(this, Store.t("copied"), android.widget.Toast.LENGTH_SHORT).show()
         }
         b.btnDup.setOnClickListener {
-            val ch = current() ?: return@setOnClickListener
-            save()
+            save(commitToStore = !isNew)
+            val ch = current()
             val copy = ch.copy(id = Store.nid(), name = "${ch.name} ${if (Store.state.locale == "en") "copy" else "副本"}", createdAt = Store.now(), updatedAt = Store.now())
             Store.state.characters.add(0, copy)
             Store.persist()
@@ -67,6 +93,10 @@ class CharacterActivity : AppCompatActivity() {
             finish()
         }
         b.btnDelete.setOnClickListener {
+            if (isNew) {
+                finish()
+                return@setOnClickListener
+            }
             confirm(this, Store.t("deleteQ")) {
                 Store.state.characters.removeAll { it.id == id }
                 Store.state.characterWorldBooks.removeAll { it.characterId == id }
@@ -92,10 +122,10 @@ class CharacterActivity : AppCompatActivity() {
     private fun switchTab(tab: Int) {
         activeTab = tab
         hideKeyboard()
-        b.panelBasic.visibility = if (tab == 0) android.view.View.VISIBLE else android.view.View.GONE
-        b.panelPersona.visibility = if (tab == 1) android.view.View.VISIBLE else android.view.View.GONE
-        b.panelDialogue.visibility = if (tab == 2) android.view.View.VISIBLE else android.view.View.GONE
-        b.panelPrompt.visibility = if (tab == 3) android.view.View.VISIBLE else android.view.View.GONE
+        b.panelBasic.visibility = if (tab == 0) View.VISIBLE else View.GONE
+        b.panelPersona.visibility = if (tab == 1) View.VISIBLE else View.GONE
+        b.panelDialogue.visibility = if (tab == 2) View.VISIBLE else View.GONE
+        b.panelPrompt.visibility = if (tab == 3) View.VISIBLE else View.GONE
 
         fun styleTab(tv: android.widget.TextView, on: Boolean) {
             tv.setBackgroundResource(if (on) R.drawable.bg_chip_on else R.drawable.bg_chip)
@@ -109,12 +139,16 @@ class CharacterActivity : AppCompatActivity() {
         b.scrollContainer.smoothScrollTo(0, 0)
     }
 
-    private fun current() = Store.state.characters.find { it.id == id }
+    private fun current(): Character = draftCharacter
 
     private fun bind() {
-        val c = current() ?: return finish()
-        b.headerTitle.text = c.name
-        b.btnSave.text = Store.t("save")
+        val c = current()
+        b.headerTitle.text = if (isNew) Store.t("newCharacterTitle") else c.name.ifBlank { Store.t("newCharacter") }
+        b.btnSave.text = if (isNew) Store.t("create") else Store.t("save")
+        b.btnDelete.visibility = if (isNew) View.GONE else View.VISIBLE
+        b.btnDup.visibility = if (isNew) View.GONE else View.VISIBLE
+        b.btnExport.visibility = if (isNew) View.GONE else View.VISIBLE
+
         b.tabBasic.text = Store.t("tabBasic")
         b.tabPersona.text = Store.t("tabPersona")
         b.tabDialogue.text = Store.t("tabDialogue")
@@ -144,9 +178,9 @@ class CharacterActivity : AppCompatActivity() {
         b.spWorld.setSelection(if (idx >= 0) idx + 1 else 0)
     }
 
-    private fun save() {
-        val c = current() ?: return
-        c.name = b.etName.text.toString()
+    private fun save(commitToStore: Boolean = false) {
+        val c = current()
+        c.name = b.etName.text.toString().ifBlank { Store.t("newCharacter") }
         c.tags = b.etTags.text.toString().split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
         c.description = b.etDesc.text.toString()
         c.personality = b.etPersonality.text.toString()
@@ -157,7 +191,15 @@ class CharacterActivity : AppCompatActivity() {
         c.systemPrompt = b.etSystem.text.toString()
         c.creatorNotes = b.etNotes.text.toString()
         c.updatedAt = Store.now()
-        val sel = b.spWorld.selectedItemPosition
-        Store.setDefaultWorld(id, if (sel <= 0) null else Store.state.worldBooks.getOrNull(sel - 1)?.id)
+
+        if (commitToStore) {
+            if (isNew && Store.state.characters.none { it.id == c.id }) {
+                Store.state.characters.add(0, c)
+                isNew = false
+            }
+            val sel = b.spWorld.selectedItemPosition
+            Store.setDefaultWorld(id, if (sel <= 0) null else Store.state.worldBooks.getOrNull(sel - 1)?.id)
+            Store.persist()
+        }
     }
 }

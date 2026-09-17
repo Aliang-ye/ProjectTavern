@@ -79,7 +79,7 @@
                 android:textSize="13sp" />
 
             <TextView
-                android:id="@+id/tabGm"
+                android:id="@+id/tabWill"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="8dp"
@@ -160,16 +160,16 @@
                 <TextView android:id="@+id/btnDelete" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="20dp" android:background="@drawable/bg_card" android:gravity="center" android:textColor="@color/wine" />
             </LinearLayout>
 
-            <!-- TAB 2: 世界 GM -->
+            <!-- TAB 2: 世界意志 -->
             <LinearLayout
-                android:id="@+id/panelGm"
+                android:id="@+id/panelWill"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:visibility="gone">
 
                 <LinearLayout
-                    android:id="@+id/gmCard"
+                    android:id="@+id/willCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:background="@drawable/bg_card"
@@ -179,22 +179,23 @@
                     android:padding="14dp">
 
                     <FrameLayout
-                        android:layout_width="52dp"
-                        android:layout_height="52dp">
+                        android:id="@+id/frameWillAvatar"
+                        android:layout_width="56dp"
+                        android:layout_height="56dp">
 
                         <TextView
-                            android:id="@+id/gmAvatar"
+                            android:id="@+id/willAvatar"
                             android:layout_width="match_parent"
                             android:layout_height="match_parent"
                             android:background="@drawable/bg_avatar"
                             android:fontFamily="serif"
                             android:gravity="center"
-                            android:text="GM"
+                            android:text="意志"
                             android:textColor="@color/ink"
                             android:textSize="16sp" />
 
                         <ImageView
-                            android:id="@+id/gmAvatarImg"
+                            android:id="@+id/willAvatarImg"
                             android:layout_width="match_parent"
                             android:layout_height="match_parent"
                             android:background="@drawable/bg_avatar"
@@ -211,7 +212,7 @@
                         android:orientation="vertical">
 
                         <TextView
-                            android:id="@+id/gmTitle"
+                            android:id="@+id/willTitle"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:fontFamily="serif"
@@ -219,7 +220,7 @@
                             android:textSize="16sp" />
 
                         <TextView
-                            android:id="@+id/gmSubtitle"
+                            android:id="@+id/willSubtitle"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
@@ -228,7 +229,7 @@
                     </LinearLayout>
 
                     <TextView
-                        android:id="@+id/btnEditGm"
+                        android:id="@+id/btnChangeAvatar"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:background="@drawable/bg_chip"
@@ -239,7 +240,7 @@
                 </LinearLayout>
 
                 <TextView
-                    android:id="@+id/btnChatGm"
+                    android:id="@+id/btnChatWill"
                     android:layout_width="match_parent"
                     android:layout_height="48dp"
                     android:layout_marginTop="14dp"
@@ -248,45 +249,105 @@
                     android:textColor="@color/on_candle"
                     android:textSize="15sp" />
 
-                <LinearLayout
+                <TextView
+                    android:id="@+id/lWillName"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="14dp"
-                    android:background="@drawable/bg_card"
-                    android:orientation="vertical"
-                    android:padding="14dp">
+                    android:textColor="@color/candle"
+                    android:textSize="13sp" />
 
-                    <TextView
-                        android:id="@+id/lGmFirstMsg"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:textColor="@color/candle"
-                        android:textSize="13sp" />
+                <EditText
+                    android:id="@+id/etWillName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/bg_input"
+                    android:fontFamily="serif"
+                    android:minHeight="44dp"
+                    android:padding="12dp"
+                    android:textColor="@color/ink"
+                    android:textSize="14sp" />
 
-                    <TextView
-                        android:id="@+id/tvGmFirstMsg"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:textColor="@color/ink"
-                        android:textSize="13sp" />
+                <TextView
+                    android:id="@+id/lWillDesc"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:textColor="@color/candle"
+                    android:textSize="13sp" />
 
-                    <TextView
-                        android:id="@+id/lGmPrompt"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
-                        android:textColor="@color/candle"
-                        android:textSize="13sp" />
+                <EditText
+                    android:id="@+id/etWillDesc"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/bg_input"
+                    android:inputType="textMultiLine"
+                    android:minHeight="70dp"
+                    android:padding="12dp"
+                    android:textColor="@color/ink"
+                    android:textSize="14sp" />
 
-                    <TextView
-                        android:id="@+id/tvGmPrompt"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:textColor="@color/muted"
-                        android:textSize="12sp" />
-                </LinearLayout>
+                <TextView
+                    android:id="@+id/lWillScenario"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:textColor="@color/candle"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/etWillScenario"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/bg_input"
+                    android:inputType="textMultiLine"
+                    android:minHeight="70dp"
+                    android:padding="12dp"
+                    android:textColor="@color/ink"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/lWillFirstMsg"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:textColor="@color/candle"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/etWillFirstMsg"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/bg_input"
+                    android:inputType="textMultiLine"
+                    android:minHeight="80dp"
+                    android:padding="12dp"
+                    android:textColor="@color/ink"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/lWillPrompt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:textColor="@color/candle"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/etWillPrompt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/bg_input"
+                    android:inputType="textMultiLine"
+                    android:minHeight="100dp"
+                    android:padding="12dp"
+                    android:textColor="@color/ink"
+                    android:textSize="14sp" />
             </LinearLayout>
 
             <!-- TAB 3: 词条库 -->

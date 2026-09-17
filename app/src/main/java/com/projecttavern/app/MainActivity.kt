@@ -59,30 +59,28 @@ class MainActivity : AppCompatActivity() {
             true
         }
         b.panelCharacters.fab.setOnClickListener {
-            val defaultGreeting = if (Store.state.locale == "en") "Hello, traveler. What brings you here?" else "你好，旅人。找我有什么事吗？"
-            val c = Character(id = Store.nid(), name = Store.t("newCharacter"), firstMessage = defaultGreeting, createdAt = Store.now(), updatedAt = Store.now())
-            Store.state.characters.add(0, c)
-            Store.persist()
-            openScreen(CharacterActivity::class.java) { it.putExtra("id", c.id) }
+            openScreen(CharacterActivity::class.java) { it.putExtra("isNew", true) }
         }
         b.panelCharacters.fab.setOnLongClickListener {
             showImportCharacterDialog()
             true
         }
         b.panelWorlds.fab.setOnClickListener {
-            val w = WorldBook(id = Store.nid(), name = Store.t("newWorld"), createdAt = Store.now(), updatedAt = Store.now())
-            Store.state.worldBooks.add(0, w)
-            Store.persist()
-            openScreen(WorldActivity::class.java) { it.putExtra("id", w.id) }
+            openScreen(WorldActivity::class.java) { it.putExtra("isNew", true) }
         }
         b.panelStories.fab.setOnClickListener {
-            val st = Story(id = Store.nid(), name = Store.t("newStory"), createdAt = Store.now(), updatedAt = Store.now())
-            Store.state.stories.add(0, st)
-            Store.persist()
-            openScreen(StoryActivity::class.java) { it.putExtra("id", st.id) }
+            openScreen(StoryActivity::class.java) { it.putExtra("isNew", true) }
         }
         b.panelChats.fab.visibility = View.GONE
-        b.panelCharacters.search.addTextChangedListener(SimpleWatcher { refreshCharacters() })
+
+        val searchHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        var searchRunnable: Runnable? = null
+        b.panelCharacters.search.addTextChangedListener(SimpleWatcher {
+            searchRunnable?.let { searchHandler.removeCallbacks(it) }
+            val r = Runnable { refreshCharacters() }
+            searchRunnable = r
+            searchHandler.postDelayed(r, 150)
+        })
         wireSettings()
         show(R.id.nav_characters)
     }
@@ -188,126 +186,159 @@ class MainActivity : AppCompatActivity() {
         val q = b.panelCharacters.search.text?.toString()?.trim()?.lowercase().orEmpty()
         val list = Store.state.characters.filter {
             q.isEmpty() || it.name.lowercase().contains(q) || it.tags.any { t -> t.lowercase().contains(q) }
-        }
+        }.sortedWith(compareByDescending<Character> { it.isPinned }.thenByDescending { it.updatedAt })
         fill(b.panelCharacters.list) {
             list.forEach { c ->
-                val row = inflateRow(it, c.name, c.description.ifBlank { Store.t("noDesc") }, Store.t("privateChat"), c.avatar) {
-                    openScreen(CharacterActivity::class.java) { it.putExtra("id", c.id) }
-                }
+                val row = inflateSwipeRow(
+                    it,
+                    title = c.name,
+                    subtitle = c.description.ifBlank { Store.t("noDesc") },
+                    meta = Store.t("privateChat"),
+                    avatarPath = c.avatar,
+                    isPinned = c.isPinned,
+                    onClick = { openScreen(CharacterActivity::class.java) { intent -> intent.putExtra("id", c.id) } },
+                    onPin = {
+                        c.isPinned = !c.isPinned
+                        Store.persist()
+                        refreshCharacters()
+                    },
+                    onDelete = {
+                        confirm(this@MainActivity, Store.t("deleteQ")) {
+                            Store.state.characters.removeAll { it.id == c.id }
+                            Store.state.characterWorldBooks.removeAll { it.characterId == c.id }
+                            Store.state.participants.removeAll { it.characterId == c.id }
+                            val removedConvs = Store.state.conversations.filter { it.characterId == c.id && it.storyId == null }
+                            val removedIds = removedConvs.map { it.id }.toSet()
+                            Store.state.messages.removeAll { it.conversationId in removedIds }
+                            Store.state.conversations.removeAll { it.id in removedIds }
+                            Store.persist()
+                            refresh()
+                        }
+                    }
+                )
                 row.findViewById<TextView>(R.id.meta).setOnClickListener { _ ->
                     val id = Store.startConversation(c.id, null) ?: return@setOnClickListener
                     openScreen(ChatActivity::class.java) { it.putExtra("id", id) }
-                }
-                row.setOnLongClickListener {
-                    confirm(this@MainActivity, Store.t("deleteQ")) {
-                        Store.state.characters.removeAll { it.id == c.id }
-                        Store.state.characterWorldBooks.removeAll { it.characterId == c.id }
-                        Store.state.participants.removeAll { it.characterId == c.id }
-                        val removedConvs = Store.state.conversations.filter { it.characterId == c.id && it.storyId == null }
-                        val removedIds = removedConvs.map { it.id }.toSet()
-                        Store.state.messages.removeAll { it.conversationId in removedIds }
-                        Store.state.conversations.removeAll { it.id in removedIds }
-                        Store.persist()
-                        refresh()
-                    }
-                    true
                 }
             }
         }
     }
 
     private fun refreshWorlds() {
+        val worlds = Store.state.worldBooks.sortedWith(compareByDescending<WorldBook> { it.isPinned }.thenByDescending { it.updatedAt })
         fill(b.panelWorlds.list) {
-            Store.state.worldBooks.forEach { w ->
-                val gm = Store.ensureWorldGm(w.id, w.name)
+            worlds.forEach { w ->
                 val n = Store.state.entries.count { e -> e.worldBookId == w.id }
-                val row = inflateRow(it, w.name, w.description.ifBlank { "$n ${Store.t("entries")}" }, Store.t("chatWithGm")) {
-                    openScreen(WorldActivity::class.java) { it.putExtra("id", w.id) }
-                }
-                row.findViewById<TextView>(R.id.meta).setOnClickListener { _ ->
-                    val convId = Store.startConversation(gm.id, null) ?: return@setOnClickListener
-                    openScreen(ChatActivity::class.java) { it.putExtra("id", convId) }
-                }
-                row.setOnLongClickListener {
-                    confirm(this@MainActivity, Store.t("deleteQ")) {
-                        Store.state.worldBooks.removeAll { it.id == w.id }
-                        Store.state.entries.removeAll { it.worldBookId == w.id }
-                        Store.state.characterWorldBooks.removeAll { it.worldBookId == w.id }
-                        Store.state.characters.removeAll { it.id == "gm-${w.id}" }
-                        Store.state.stories.forEach { it.worldBookIds.remove(w.id) }
-                        Store.state.conversations.forEach { it.worldBookIds.remove(w.id) }
+                val willName = w.willName.ifBlank { Store.t("worldWill") }
+                val row = inflateSwipeRow(
+                    it,
+                    title = w.name,
+                    subtitle = w.description.ifBlank { "$n ${Store.t("entries")} · $willName" },
+                    meta = Store.t("chatWithWill"),
+                    avatarPath = w.willAvatar,
+                    isPinned = w.isPinned,
+                    onClick = { openScreen(WorldActivity::class.java) { intent -> intent.putExtra("id", w.id) } },
+                    onPin = {
+                        w.isPinned = !w.isPinned
                         Store.persist()
-                        refresh()
+                        refreshWorlds()
+                    },
+                    onDelete = {
+                        confirm(this@MainActivity, Store.t("deleteQ")) {
+                            Store.state.worldBooks.removeAll { it.id == w.id }
+                            Store.state.entries.removeAll { it.worldBookId == w.id }
+                            Store.state.characterWorldBooks.removeAll { it.worldBookId == w.id }
+                            Store.state.stories.forEach { it.worldBookIds.remove(w.id) }
+                            Store.state.conversations.forEach { it.worldBookIds.remove(w.id) }
+                            Store.persist()
+                            refresh()
+                        }
                     }
-                    true
+                )
+                row.findViewById<TextView>(R.id.meta).setOnClickListener { _ ->
+                    val convId = Store.startWorldWillConversation(w.id) ?: return@setOnClickListener
+                    openScreen(ChatActivity::class.java) { intent -> intent.putExtra("id", convId) }
                 }
             }
         }
     }
 
     private fun refreshStories() {
+        val stories = Store.state.stories.sortedWith(compareByDescending<Story> { it.isPinned }.thenByDescending { it.updatedAt })
         fill(b.panelStories.list) {
-            Store.state.stories.forEach { st ->
+            stories.forEach { st ->
                 val n = Store.state.participants.count { it.storyId == st.id }
                 val chats = Store.state.conversations.count { it.storyId == st.id }
-                val row = inflateRow(it, st.name, st.description.ifBlank { Store.t("stories") }, "$n ${Store.t("people")} · $chats") {
-                    openScreen(StoryActivity::class.java) { it.putExtra("id", st.id) }
-                }
-                row.setOnLongClickListener {
-                    confirm(this@MainActivity, Store.t("deleteQ")) {
-                        Store.state.stories.removeAll { it.id == st.id }
-                        Store.state.participants.removeAll { it.storyId == st.id }
-                        Store.state.conversations.filter { it.storyId == st.id }.forEach { it.storyId = null }
+                inflateSwipeRow(
+                    it,
+                    title = st.name,
+                    subtitle = st.description.ifBlank { Store.t("stories") },
+                    meta = "$n ${Store.t("people")} · $chats",
+                    isPinned = st.isPinned,
+                    onClick = { openScreen(StoryActivity::class.java) { intent -> intent.putExtra("id", st.id) } },
+                    onPin = {
+                        st.isPinned = !st.isPinned
                         Store.persist()
-                        refresh()
+                        refreshStories()
+                    },
+                    onDelete = {
+                        confirm(this@MainActivity, Store.t("deleteQ")) {
+                            Store.state.stories.removeAll { it.id == st.id }
+                            Store.state.participants.removeAll { it.storyId == st.id }
+                            Store.state.conversations.filter { it.storyId == st.id }.forEach { it.storyId = null }
+                            Store.persist()
+                            refresh()
+                        }
                     }
-                    true
-                }
+                )
             }
         }
     }
 
     private fun refreshChats() {
+        val allConvs = Store.state.conversations.sortedWith(compareByDescending<Conversation> { it.isPinned }.thenByDescending { it.updatedAt })
         fill(b.panelChats.list) {
-            val priv = Store.state.conversations.filter { it.storyId == null }.sortedByDescending { it.updatedAt }
-            val story = Store.state.conversations.filter { it.storyId != null }.sortedByDescending { it.updatedAt }
-            if (priv.isEmpty() && story.isEmpty()) {
+            if (allConvs.isEmpty()) {
                 val tv = TextView(this)
                 tv.text = Store.t("noChats")
                 tv.setTextColor(getColor(R.color.muted))
                 tv.textSize = 14f
                 it.addView(tv)
             }
-            priv.forEach { c ->
+            allConvs.forEach { c ->
                 val ch = Store.state.characters.find { it.id == c.characterId }
-                val row = inflateRow(it, c.title, Store.t("privateChat"), Store.t("open"), ch?.avatar) {
-                    openScreen(ChatActivity::class.java) { it.putExtra("id", c.id) }
+                val world = if (ch == null && c.worldBookIds.isNotEmpty()) {
+                    Store.state.worldBooks.find { it.id in c.worldBookIds }
+                } else null
+                val story = Store.state.stories.find { s -> s.id == c.storyId }
+                val subtitle = if (c.storyId == null) {
+                    if (world != null) "${world.name} · ${world.willName.ifBlank { Store.t("worldWill") }}" else Store.t("privateChat")
+                } else {
+                    story?.name ?: Store.t("stories")
                 }
-                row.setOnLongClickListener {
-                    confirm(this@MainActivity, Store.t("deleteQ")) {
-                        Store.state.messages.removeAll { m -> m.conversationId == c.id }
-                        Store.state.conversations.removeAll { conv -> conv.id == c.id }
+                val avatar = ch?.avatar ?: world?.willAvatar
+                inflateSwipeRow(
+                    it,
+                    title = c.title,
+                    subtitle = subtitle,
+                    meta = Store.t("open"),
+                    avatarPath = avatar,
+                    isPinned = c.isPinned,
+                    onClick = { openScreen(ChatActivity::class.java) { intent -> intent.putExtra("id", c.id) } },
+                    onPin = {
+                        c.isPinned = !c.isPinned
                         Store.persist()
-                        refresh()
+                        refreshChats()
+                    },
+                    onDelete = {
+                        confirm(this@MainActivity, Store.t("deleteQ")) {
+                            Store.state.messages.removeAll { m -> m.conversationId == c.id }
+                            Store.state.conversations.removeAll { conv -> conv.id == c.id }
+                            Store.persist()
+                            refresh()
+                        }
                     }
-                    true
-                }
-            }
-            story.forEach { c ->
-                val ch = Store.state.characters.find { it.id == c.characterId }
-                val sn = Store.state.stories.find { s -> s.id == c.storyId }?.name.orEmpty()
-                val row = inflateRow(it, c.title, sn, Store.t("open"), ch?.avatar) {
-                    openScreen(ChatActivity::class.java) { it.putExtra("id", c.id) }
-                }
-                row.setOnLongClickListener {
-                    confirm(this@MainActivity, Store.t("deleteQ")) {
-                        Store.state.messages.removeAll { m -> m.conversationId == c.id }
-                        Store.state.conversations.removeAll { conv -> conv.id == c.id }
-                        Store.persist()
-                        refresh()
-                    }
-                    true
-                }
+                )
             }
         }
     }
@@ -358,12 +389,8 @@ class MainActivity : AppCompatActivity() {
             Store.persist()
             openScreen(ProfileActivity::class.java) { it.putExtra("id", p.id) }
         }
-        s.btnNewPreset.setOnClickListener {
-            val loc = Store.state.locale
-            val p = Preset(Store.nid(), Store.t("newPreset"), loc, 0.9, 0.95, 800, 32000, 800, if (loc == "en") "Keep the character's voice. Never act for the user." else "保持角色声音。不要替用户行动。")
-            Store.state.presets.add(p)
-            Store.persist()
-            refreshSettings()
+        s.cardPresetsEntry.setOnClickListener {
+            openScreen(PresetActivity::class.java)
         }
         s.rowStreaming.setOnClickListener {
             Store.state.streaming = !Store.state.streaming
@@ -507,11 +534,9 @@ class MainActivity : AppCompatActivity() {
                 openScreen(ProfileActivity::class.java) { it.putExtra("id", p.id) }
             }
         }
-        s.labelPresets.text = Store.t("presets")
-        s.presetsHint.text = Store.t("presetsHint")
-        s.btnNewPreset.text = "+ ${Store.t("newPreset")}"
-        s.presetList.removeAllViews()
-        Store.localePresets().forEach { p -> inflatePreset(s.presetList, p) }
+        s.labelPresets.text = Store.t("presetManagement")
+        s.presetsHint.text = Store.t("presetManagementHint")
+        s.presetCountBadge.text = "${Store.localePresets().size}"
         s.labelChat.text = Store.t("chatOptions")
         s.labelStreaming.text = Store.t("streaming")
         s.valStreaming.text = if (Store.state.streaming) "ON" else "OFF"
@@ -528,55 +553,6 @@ class MainActivity : AppCompatActivity() {
         s.labelAbout.text = Store.t("about")
         s.aboutBody.text = Store.t("aboutBody")
         s.aboutLine.text = Store.t("aboutLine")
-    }
-
-    private fun inflatePreset(parent: LinearLayout, p: Preset) {
-        val v = LayoutInflater.from(this).inflate(R.layout.item_preset, parent, false)
-        val etName = v.findViewById<EditText>(R.id.etName)
-        val etTemp = v.findViewById<EditText>(R.id.etTemp)
-        val etTopP = v.findViewById<EditText>(R.id.etTopP)
-        val etMax = v.findViewById<EditText>(R.id.etMax)
-        val etContext = v.findViewById<EditText>(R.id.etContext)
-        val etBudget = v.findViewById<EditText>(R.id.etBudget)
-        val etPrompt = v.findViewById<EditText>(R.id.etPrompt)
-        v.findViewById<TextView>(R.id.lContext).text = Store.t("contextLimit")
-        v.findViewById<TextView>(R.id.lBudget).text = Store.t("responseBudget")
-        v.findViewById<TextView>(R.id.btnDelete).text = Store.t("delete")
-        etName.setText(p.name)
-        etTemp.setText(p.temperature.toString())
-        etTopP.setText(p.topP.toString())
-        etMax.setText(p.maxTokens.toString())
-        etContext.setText(p.contextLimit.toString())
-        etBudget.setText(p.responseBudget.toString())
-        etPrompt.setText(p.systemPrompt)
-        fun save() {
-            p.name = etName.text.toString()
-            p.temperature = etTemp.text.toString().toDoubleOrNull() ?: p.temperature
-            p.topP = etTopP.text.toString().toDoubleOrNull() ?: p.topP
-            p.maxTokens = etMax.text.toString().toIntOrNull() ?: p.maxTokens
-            p.contextLimit = etContext.text.toString().toIntOrNull() ?: p.contextLimit
-            p.responseBudget = etBudget.text.toString().toIntOrNull() ?: p.responseBudget
-            p.systemPrompt = etPrompt.text.toString()
-            Store.persist()
-        }
-        val w = SimpleWatcher { save() }
-        etName.addTextChangedListener(w)
-        etTemp.addTextChangedListener(w)
-        etTopP.addTextChangedListener(w)
-        etMax.addTextChangedListener(w)
-        etContext.addTextChangedListener(w)
-        etBudget.addTextChangedListener(w)
-        etPrompt.addTextChangedListener(w)
-        v.findViewById<TextView>(R.id.btnDelete).setOnClickListener {
-            confirm(this, Store.t("deleteQ")) {
-                Store.state.presets.removeAll { it.id == p.id }
-                val fallback = Store.localePresets().firstOrNull()?.id ?: Store.state.presets.firstOrNull()?.id.orEmpty()
-                Store.state.conversations.forEach { if (it.presetId == p.id) it.presetId = fallback }
-                Store.persist()
-                refreshSettings()
-            }
-        }
-        parent.addView(v)
     }
 
     private fun exportBackup() {

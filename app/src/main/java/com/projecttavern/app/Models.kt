@@ -34,6 +34,7 @@ data class Character(
     var systemPrompt: String = "",
     var creatorNotes: String = "",
     var tags: MutableList<String> = mutableListOf(),
+    var isPinned: Boolean = false,
     var createdAt: Long = 0,
     var updatedAt: Long = 0,
 )
@@ -53,6 +54,13 @@ data class WorldBook(
     var institutions: String = "",
     var culture: String = "",
     var personalNotes: String = "",
+    var willName: String = "世界意志",
+    var willDescription: String = "",
+    var willScenario: String = "",
+    var willFirstMessage: String = "",
+    var willSystemPrompt: String = "",
+    var willAvatar: String? = null,
+    var isPinned: Boolean = false,
     var createdAt: Long = 0,
     var updatedAt: Long = 0,
 )
@@ -87,6 +95,7 @@ data class Story(
     var description: String = "",
     var worldBookIds: MutableList<String> = mutableListOf(),
     var personaId: String? = null,
+    var isPinned: Boolean = false,
     var createdAt: Long = 0,
     var updatedAt: Long = 0,
 )
@@ -129,6 +138,7 @@ data class Conversation(
     var personaId: String? = null,
     var title: String = "",
     var tipMessageId: String? = null,
+    var isPinned: Boolean = false,
     var createdAt: Long = 0,
     var updatedAt: Long = 0,
 )

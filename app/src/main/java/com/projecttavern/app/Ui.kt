@@ -22,17 +22,30 @@ fun Context.dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 
 
 fun letter(name: String) = name.trim().take(1).ifBlank { "?" }
 
+private val avatarCache = android.util.LruCache<String, Bitmap>(48)
+
 fun renderAvatar(tv: TextView, img: ImageView?, name: String, avatarPath: String?) {
-    if (!avatarPath.isNullOrBlank() && File(avatarPath).exists()) {
-        try {
-            val bmp = BitmapFactory.decodeFile(avatarPath)
-            if (bmp != null) {
-                img?.setImageBitmap(bmp)
-                img?.visibility = View.VISIBLE
-                tv.visibility = View.GONE
-                return
-            }
-        } catch (_: Exception) {}
+    if (!avatarPath.isNullOrBlank()) {
+        val cached = avatarCache.get(avatarPath)
+        if (cached != null) {
+            img?.setImageBitmap(cached)
+            img?.visibility = View.VISIBLE
+            tv.visibility = View.GONE
+            return
+        }
+        val file = File(avatarPath)
+        if (file.exists()) {
+            try {
+                val bmp = BitmapFactory.decodeFile(avatarPath)
+                if (bmp != null) {
+                    avatarCache.put(avatarPath, bmp)
+                    img?.setImageBitmap(bmp)
+                    img?.visibility = View.VISIBLE
+                    tv.visibility = View.GONE
+                    return
+                }
+            } catch (_: Exception) {}
+        }
     }
     img?.setImageDrawable(null)
     img?.visibility = View.GONE
@@ -43,7 +56,10 @@ fun renderAvatar(tv: TextView, img: ImageView?, name: String, avatarPath: String
 fun saveAvatar(ctx: Context, id: String, uri: Uri): String? {
     return try {
         val dir = File(ctx.filesDir, "avatars").apply { mkdirs() }
-        dir.listFiles()?.filter { it.name.startsWith("${id}_") }?.forEach { it.delete() }
+        dir.listFiles()?.filter { it.name.startsWith("${id}_") }?.forEach {
+            avatarCache.remove(it.absolutePath)
+            it.delete()
+        }
         val dest = File(dir, "${id}_${System.currentTimeMillis()}.jpg")
         ctx.contentResolver.openInputStream(uri)?.use { input ->
             val bmp = BitmapFactory.decodeStream(input) ?: return null
@@ -57,6 +73,7 @@ fun saveAvatar(ctx: Context, id: String, uri: Uri): String? {
             dest.outputStream().use { out ->
                 scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
             }
+            avatarCache.put(dest.absolutePath, scaled)
             dest.absolutePath
         }
     } catch (_: Exception) {
@@ -91,6 +108,87 @@ fun inflateRow(parent: LinearLayout, title: String, subtitle: String, meta: Stri
         metaView.setPadding(padH, padV, padH, padV)
     }
     v.setOnClickListener { onClick() }
+    parent.addView(v)
+    return v
+}
+
+fun inflateSwipeRow(
+    parent: LinearLayout,
+    title: String,
+    subtitle: String,
+    meta: String = "",
+    avatarPath: String? = null,
+    isPinned: Boolean = false,
+    onClick: () -> Unit,
+    onPin: () -> Unit,
+    onDelete: () -> Unit,
+): View {
+    val ctx = parent.context
+    val v = LayoutInflater.from(ctx).inflate(R.layout.item_swipe_row, parent, false)
+    val hsv = v.findViewById<android.widget.HorizontalScrollView>(R.id.swipeScrollView)
+    val contentCard = v.findViewById<LinearLayout>(R.id.contentCard)
+    val avatar = v.findViewById<TextView>(R.id.avatar)
+    val avatarImg = v.findViewById<ImageView>(R.id.avatarImg)
+    val pinBadge = v.findViewById<TextView>(R.id.pinBadge)
+    val titleView = v.findViewById<TextView>(R.id.title)
+    val subtitleView = v.findViewById<TextView>(R.id.subtitle)
+    val metaView = v.findViewById<TextView>(R.id.meta)
+    val btnPin = v.findViewById<TextView>(R.id.btnPin)
+    val btnDelete = v.findViewById<TextView>(R.id.btnDelete)
+
+    fun updateCardWidth() {
+        val parentWidth = parent.width
+        val effectiveWidth = if (parentWidth > 0) {
+            parentWidth - parent.paddingLeft - parent.paddingRight
+        } else {
+            val dm = ctx.resources.displayMetrics
+            dm.widthPixels - ctx.dp(32)
+        }
+        val lp = contentCard.layoutParams
+        if (lp.width != effectiveWidth) {
+            lp.width = effectiveWidth
+            contentCard.layoutParams = lp
+        }
+    }
+    updateCardWidth()
+    parent.post { updateCardWidth() }
+
+    renderAvatar(avatar, avatarImg, title, avatarPath)
+    titleView.text = title
+    subtitleView.text = subtitle
+    pinBadge.visibility = if (isPinned) View.VISIBLE else View.GONE
+    btnPin.text = if (isPinned) Store.t("unpin") else Store.t("pin")
+
+    if (meta.isBlank()) {
+        metaView.visibility = View.GONE
+    } else {
+        metaView.visibility = View.VISIBLE
+        metaView.text = meta
+        metaView.setBackgroundResource(R.drawable.bg_chip)
+        metaView.setTextColor(ContextCompat.getColor(ctx, R.color.candle))
+        val padH = ctx.dp(8)
+        val padV = ctx.dp(4)
+        metaView.setPadding(padH, padV, padH, padV)
+    }
+
+    contentCard.setOnClickListener {
+        if (hsv.scrollX > 10) {
+            hsv.smoothScrollTo(0, 0)
+        } else {
+            onClick()
+        }
+    }
+
+    btnPin.setOnClickListener {
+        hsv.smoothScrollTo(0, 0)
+        onPin()
+    }
+
+    btnDelete.setOnClickListener {
+        hsv.smoothScrollTo(0, 0)
+        onDelete()
+    }
+
     parent.addView(v)
     return v
 }

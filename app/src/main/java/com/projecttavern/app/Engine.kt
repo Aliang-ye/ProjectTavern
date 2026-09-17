@@ -100,6 +100,15 @@ object Engine {
             if (ch.systemPrompt.isNotBlank()) sys.append("\nInstructions: ").append(fill(ch.systemPrompt))
             if (ch.exampleDialogues.isNotBlank()) sys.append("\nExample Dialogues:\n").append(fill(ch.exampleDialogues))
             sys.append("\n\n")
+        } else if (worlds.isNotEmpty()) {
+            val primaryWorld = worlds.first()
+            val willName = primaryWorld.willName.ifBlank { if (s.locale == "en") "World Will" else "世界意志" }
+            sys.append("## WORLD WILL (NARRATOR)\nName: ").append(willName)
+            sys.append(" of [").append(primaryWorld.name).append("]")
+            if (primaryWorld.willDescription.isNotBlank()) sys.append("\nDescription: ").append(fill(primaryWorld.willDescription))
+            if (primaryWorld.willScenario.isNotBlank()) sys.append("\nScenario: ").append(fill(primaryWorld.willScenario))
+            if (primaryWorld.willSystemPrompt.isNotBlank()) sys.append("\nInstructions: ").append(fill(primaryWorld.willSystemPrompt))
+            sys.append("\n\n")
         }
 
         if (conv.storyId != null) {

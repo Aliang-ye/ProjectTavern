@@ -14,23 +14,51 @@ import com.projecttavern.app.databinding.ActivityStoryBinding
 class StoryActivity : AppCompatActivity() {
     private lateinit var b: ActivityStoryBinding
     private lateinit var id: String
+    private var isNew: Boolean = false
+    private lateinit var draftStory: Story
+    private val draftParticipants = mutableListOf<StoryParticipant>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        id = intent.getStringExtra("id") ?: return finish()
+        isNew = intent.getBooleanExtra("isNew", false)
+        id = intent.getStringExtra("id") ?: Store.nid()
+
+        if (isNew) {
+            draftStory = Story(
+                id = id,
+                name = "",
+                createdAt = Store.now(),
+                updatedAt = Store.now()
+            )
+        } else {
+            val existing = Store.state.stories.find { it.id == id }
+            if (existing == null) {
+                finish()
+                return
+            }
+            draftStory = existing
+        }
+
         b = ActivityStoryBinding.inflate(layoutInflater)
         setContentView(b.root)
         b.btnBack.setOnClickListener { finish() }
-        b.btnSave.setOnClickListener { save(); finish() }
+        b.btnSave.setOnClickListener {
+            save(commitToStore = true)
+            finish()
+        }
         b.btnAddMain.setOnClickListener { pickCharacter("MAIN_CHARACTER") }
         b.btnAddCompanion.setOnClickListener { pickCharacter("COMPANION") }
         b.btnAddNpc.setOnClickListener { pickCharacter("NPC") }
         b.btnStart.setOnClickListener {
-            save()
-            val conv = Store.startConversation(null, id, current()?.personaId) ?: return@setOnClickListener
+            save(commitToStore = true)
+            val conv = Store.startConversation(null, id, current().personaId) ?: return@setOnClickListener
             startActivity(Intent(this, ChatActivity::class.java).putExtra("id", conv))
         }
         b.btnDelete.setOnClickListener {
+            if (isNew) {
+                finish()
+                return@setOnClickListener
+            }
             confirm(this, Store.t("deleteQ")) {
                 Store.state.stories.removeAll { it.id == id }
                 Store.state.participants.removeAll { it.storyId == id }
@@ -66,12 +94,14 @@ class StoryActivity : AppCompatActivity() {
         b.scrollContainer.smoothScrollTo(0, 0)
     }
 
-    private fun current() = Store.state.stories.find { it.id == id }
+    private fun current(): Story = draftStory
 
     private fun bind() {
-        val st = current() ?: return finish()
-        b.headerTitle.text = st.name
-        b.btnSave.text = Store.t("save")
+        val st = current()
+        b.headerTitle.text = if (isNew) Store.t("newStoryTitle") else st.name.ifBlank { Store.t("newStory") }
+        b.btnSave.text = if (isNew) Store.t("create") else Store.t("save")
+        b.btnDelete.visibility = if (isNew) View.GONE else View.VISIBLE
+
         b.tabStory.text = Store.t("tabStory")
         b.tabCast.text = Store.t("tabCast")
         b.tabWorlds.text = Store.t("tabWorlds")
@@ -104,7 +134,7 @@ class StoryActivity : AppCompatActivity() {
             b.worldList.addView(cb)
         }
         b.castList.removeAllViews()
-        val parts = Store.state.participants.filter { it.storyId == id }
+        val parts = if (isNew) draftParticipants else Store.state.participants.filter { it.storyId == id }
         if (parts.isEmpty()) {
             val emptyTv = TextView(this)
             emptyTv.text = Store.t("noMainOptional")
@@ -131,8 +161,12 @@ class StoryActivity : AppCompatActivity() {
                 rm.text = Store.t("delete")
                 rm.setTextColor(getColor(R.color.wine))
                 rm.setOnClickListener {
-                    Store.state.participants.removeAll { it.id == p.id }
-                    Store.persist()
+                    if (isNew) {
+                        draftParticipants.removeAll { it.id == p.id }
+                    } else {
+                        Store.state.participants.removeAll { it.id == p.id }
+                        Store.persist()
+                    }
                     bind()
                 }
                 row.addView(tv); row.addView(rm)
@@ -148,29 +182,40 @@ class StoryActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setItems(names) { _, which ->
                 val ch = Store.state.characters[which]
+                val participants = if (isNew) draftParticipants else Store.state.participants
                 if (role == "MAIN_CHARACTER") {
-                    Store.state.participants.filter { it.storyId == id && it.role == "MAIN_CHARACTER" }.forEach { it.role = "COMPANION" }
+                    participants.filter { it.storyId == id && it.role == "MAIN_CHARACTER" }.forEach { it.role = "COMPANION" }
                 }
-                val existing = Store.state.participants.find { it.storyId == id && it.characterId == ch.id }
+                val existing = participants.find { it.storyId == id && it.characterId == ch.id }
                 if (existing != null) {
                     existing.role = role
                     existing.priority = if (role == "MAIN_CHARACTER") 100 else 50
                 } else {
-                    Store.state.participants.add(StoryParticipant(Store.nid(), id, ch.id, role, true, if (role == "MAIN_CHARACTER") 100 else 50))
+                    participants.add(StoryParticipant(Store.nid(), id, ch.id, role, true, if (role == "MAIN_CHARACTER") 100 else 50))
                 }
-                Store.persist()
+                if (!isNew) Store.persist()
                 bind()
             }
             .show()
     }
 
-    private fun save() {
-        val st = current() ?: return
+    private fun save(commitToStore: Boolean = false) {
+        val st = current()
         st.name = b.etName.text.toString().ifBlank { Store.t("newStory") }
         st.description = b.etDesc.text.toString()
         val sel = b.spPersona.selectedItemPosition
         st.personaId = if (sel <= 0) null else Store.state.personas.getOrNull(sel - 1)?.id
         st.updatedAt = Store.now()
-        Store.persist()
+
+        if (commitToStore) {
+            if (isNew && Store.state.stories.none { it.id == st.id }) {
+                Store.state.stories.add(0, st)
+                draftParticipants.forEach {
+                    if (Store.state.participants.none { p -> p.id == it.id }) Store.state.participants.add(it)
+                }
+                isNew = false
+            }
+            Store.persist()
+        }
     }
 }

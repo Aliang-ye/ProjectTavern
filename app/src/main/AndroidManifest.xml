@@ -26,6 +26,7 @@
         <activity android:name=".ChatActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".EntryTestActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ProfileActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".PresetActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

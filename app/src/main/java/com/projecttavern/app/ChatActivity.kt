@@ -76,7 +76,13 @@ class ChatActivity : AppCompatActivity() {
     private fun bindHeader() {
         val c = conv() ?: return finish()
         val ch = Store.state.characters.find { it.id == c.characterId }
-        b.headerTitle.text = ch?.name ?: c.title
+        val world = if (c.characterId.isNullOrBlank() && c.worldBookIds.isNotEmpty()) {
+            Store.state.worldBooks.find { it.id in c.worldBookIds }
+        } else null
+        val headerName = ch?.name ?: if (world != null) {
+            "${world.name} · ${world.willName.ifBlank { Store.t("worldWill") }}"
+        } else c.title
+        b.headerTitle.text = headerName
         val contextText = if (c.storyId == null) Store.t("privateChat") else Store.state.stories.find { it.id == c.storyId }?.name ?: Store.t("stories")
         val live = if (busy) {
             if (Store.state.locale == "en") "Streaming" else "流式中"
@@ -350,9 +356,14 @@ class ChatActivity : AppCompatActivity() {
             val story = Store.state.stories.find { it.id == conv()?.storyId }
             val mainPart = Store.state.participants.find { it.storyId == conv()?.storyId && it.role == "MAIN_CHARACTER" }
                 ?: Store.state.participants.firstOrNull { it.storyId == conv()?.storyId }
+            val world = if (ch == null && conv()?.worldBookIds?.isNotEmpty() == true) {
+                Store.state.worldBooks.find { it.id in conv()!!.worldBookIds }
+            } else null
             val displayCh = ch ?: Store.state.characters.find { it.id == mainPart?.characterId }
-            val displayName = displayCh?.name ?: story?.name ?: conv()?.title ?: "?"
-            val displayAvatar = displayCh?.avatar
+            val displayName = displayCh?.name ?: if (world != null) {
+                "${world.name} · ${world.willName.ifBlank { Store.t("worldWill") }}"
+            } else story?.name ?: conv()?.title ?: "?"
+            val displayAvatar = displayCh?.avatar ?: world?.willAvatar
             val body = h.v.findViewById<TextView>(R.id.body)
             val user = h.v.findViewById<TextView>(R.id.userBody)
             val nameRow = h.v.findViewById<LinearLayout>(R.id.nameRow)
