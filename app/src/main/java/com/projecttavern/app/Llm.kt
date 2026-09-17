@@ -58,9 +58,10 @@ object Llm {
         require(apiKey.isNotBlank()) { "OpenAI API key is required" }
 
         val arr = JSONArray()
-        messages.forEach { (role, content) ->
+        messages.filter { it.second.isNotBlank() }.forEach { (role, content) ->
             arr.put(JSONObject().put("role", role).put("content", content))
         }
+        if (arr.length() == 0) return ""
         val effectiveMaxTokens = if (preset.responseBudget > 0) minOf(preset.maxTokens, preset.responseBudget) else preset.maxTokens
         val body = JSONObject()
             .put("model", p.model)
@@ -87,9 +88,24 @@ object Llm {
         preset: Preset,
         onDelta: (String) -> Unit,
     ): String {
-        val system = messages.filter { it.first == "system" }.joinToString("\n\n") { it.second }
+        val system = messages.filter { it.first == "system" && it.second.isNotBlank() }.joinToString("\n\n") { it.second }
+        val nonSystem = messages.filter { it.first != "system" && it.second.isNotBlank() }.toMutableList()
+        if (nonSystem.isEmpty()) {
+            nonSystem.add("user" to "Hello")
+        } else if (nonSystem.first().first != "user") {
+            nonSystem.add(0, "user" to "（开启对话）")
+        }
+        val merged = mutableListOf<Pair<String, String>>()
+        for (msg in nonSystem) {
+            if (merged.isNotEmpty() && merged.last().first == msg.first) {
+                val prev = merged.removeAt(merged.lastIndex)
+                merged.add(prev.first to "${prev.second}\n\n${msg.second}")
+            } else {
+                merged.add(msg)
+            }
+        }
         val arr = JSONArray()
-        messages.filter { it.first != "system" }.forEach { (role, content) ->
+        merged.forEach { (role, content) ->
             arr.put(JSONObject().put("role", role).put("content", content))
         }
         val effectiveMaxTokens = if (preset.responseBudget > 0) minOf(preset.maxTokens, preset.responseBudget) else preset.maxTokens

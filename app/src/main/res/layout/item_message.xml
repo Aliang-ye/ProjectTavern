@@ -14,15 +14,29 @@
         android:orientation="horizontal"
         android:paddingHorizontal="2dp">
 
-        <TextView
-            android:id="@+id/avatar"
+        <FrameLayout
             android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:background="@drawable/bg_avatar"
-            android:fontFamily="serif"
-            android:gravity="center"
-            android:textColor="@color/ink"
-            android:textSize="12sp" />
+            android:layout_height="28dp">
+
+            <TextView
+                android:id="@+id/avatar"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_avatar"
+                android:fontFamily="serif"
+                android:gravity="center"
+                android:textColor="@color/ink"
+                android:textSize="12sp" />
+
+            <ImageView
+                android:id="@+id/avatarImg"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_avatar"
+                android:clipToOutline="true"
+                android:scaleType="centerCrop"
+                android:visibility="gone" />
+        </FrameLayout>
 
         <TextView
             android:id="@+id/speaker"

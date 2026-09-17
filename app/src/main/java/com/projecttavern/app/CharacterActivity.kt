@@ -1,14 +1,28 @@
 package com.projecttavern.app
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.ArrayAdapter
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.projecttavern.app.databinding.ActivityCharacterBinding
 
 class CharacterActivity : AppCompatActivity() {
     private lateinit var b: ActivityCharacterBinding
     private lateinit var id: String
+
+    private val pickAvatar = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            val path = saveAvatar(this, id, uri)
+            if (path != null) {
+                current()?.avatar = path
+                current()?.updatedAt = Store.now()
+                Store.persist()
+                bind()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -17,6 +31,19 @@ class CharacterActivity : AppCompatActivity() {
         setContentView(b.root)
         b.btnBack.setOnClickListener { finish() }
         b.btnSave.setOnClickListener { save(); finish() }
+        b.avatarContainer.setOnClickListener { pickAvatar.launch("image/*") }
+        b.tapAvatar.setOnClickListener { pickAvatar.launch("image/*") }
+        b.avatarContainer.setOnLongClickListener {
+            val c = current()
+            if (c?.avatar != null) {
+                confirm(this, Store.t("deleteQ")) {
+                    c.avatar = null
+                    Store.persist()
+                    bind()
+                }
+            }
+            true
+        }
         b.btnPrivate.setOnClickListener {
             save()
             val cid = Store.startConversation(id, null) ?: return@setOnClickListener
@@ -48,7 +75,7 @@ class CharacterActivity : AppCompatActivity() {
         val c = current() ?: return finish()
         b.headerTitle.text = c.name
         b.btnSave.text = Store.t("save")
-        b.avatar.text = letter(c.name)
+        renderAvatar(b.avatar, b.avatarImg, c.name, c.avatar)
         b.tapAvatar.text = Store.t("tapAvatar")
         b.btnPrivate.text = Store.t("privateChat")
         b.privateHint.text = Store.t("privateHint")

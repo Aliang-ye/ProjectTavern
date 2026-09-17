@@ -24,7 +24,7 @@ data class Preset(
 data class Character(
     var id: String = "",
     var name: String = "",
-    var avatar: String = "",
+    var avatar: String? = null,
     var description: String = "",
     var personality: String = "",
     var scenario: String = "",
@@ -71,11 +71,22 @@ data class WorldBookEntry(
     var insertionPosition: String = "after_char",
 )
 
+data class Persona(
+    var id: String = "",
+    var name: String = "",
+    var avatar: String? = null,
+    var description: String = "",
+    var tags: MutableList<String> = mutableListOf(),
+    var createdAt: Long = 0,
+    var updatedAt: Long = 0,
+)
+
 data class Story(
     var id: String = "",
     var name: String = "",
     var description: String = "",
     var worldBookIds: MutableList<String> = mutableListOf(),
+    var personaId: String? = null,
     var createdAt: Long = 0,
     var updatedAt: Long = 0,
 )
@@ -115,6 +126,7 @@ data class Conversation(
     var characterVersionId: String? = null,
     var worldBookIds: MutableList<String> = mutableListOf(),
     var presetId: String = "",
+    var personaId: String? = null,
     var title: String = "",
     var tipMessageId: String? = null,
     var createdAt: Long = 0,
@@ -142,6 +154,8 @@ data class TavernState(
     var presets: MutableList<Preset> = mutableListOf(),
     var profiles: MutableList<ApiProfile> = mutableListOf(),
     var activeProfileId: String? = null,
+    var personas: MutableList<Persona> = mutableListOf(),
+    var activePersonaId: String? = null,
     var locale: String = "zh",
     var appearance: String = "dark",
     var userName: String = "你",

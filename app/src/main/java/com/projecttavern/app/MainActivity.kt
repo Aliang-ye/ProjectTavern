@@ -34,6 +34,22 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+    private val pickPersonaAvatar =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+            if (uri != null) {
+                val active = Store.state.personas.find { it.id == Store.state.activePersonaId } ?: Store.state.personas.firstOrNull()
+                if (active != null) {
+                    val path = saveAvatar(this, active.id, uri)
+                    if (path != null) {
+                        active.avatar = path
+                        active.updatedAt = Store.now()
+                        Store.persist()
+                        refreshSettings()
+                    }
+                }
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivityMainBinding.inflate(layoutInflater)
@@ -43,7 +59,8 @@ class MainActivity : AppCompatActivity() {
             true
         }
         b.panelCharacters.fab.setOnClickListener {
-            val c = Character(id = Store.nid(), name = Store.t("newCharacter"), firstMessage = "…", createdAt = Store.now(), updatedAt = Store.now())
+            val defaultGreeting = if (Store.state.locale == "en") "Hello, traveler. What brings you here?" else "你好，旅人。找我有什么事吗？"
+            val c = Character(id = Store.nid(), name = Store.t("newCharacter"), firstMessage = defaultGreeting, createdAt = Store.now(), updatedAt = Store.now())
             Store.state.characters.add(0, c)
             Store.persist()
             openScreen(CharacterActivity::class.java) { it.putExtra("id", c.id) }
@@ -130,7 +147,7 @@ class MainActivity : AppCompatActivity() {
         }
         fill(b.panelCharacters.list) {
             list.forEach { c ->
-                inflateRow(it, c.name, c.description.ifBlank { Store.t("noDesc") }, Store.t("privateChat")) {
+                inflateRow(it, c.name, c.description.ifBlank { Store.t("noDesc") }, Store.t("privateChat"), c.avatar) {
                     openScreen(CharacterActivity::class.java) { it.putExtra("id", c.id) }
                 }.findViewById<TextView>(R.id.meta).setOnClickListener { _ ->
                     val id = Store.startConversation(c.id, null) ?: return@setOnClickListener
@@ -176,13 +193,15 @@ class MainActivity : AppCompatActivity() {
                 it.addView(tv)
             }
             priv.forEach { c ->
-                inflateRow(it, c.title, Store.t("privateChat"), Store.t("open")) {
+                val ch = Store.state.characters.find { it.id == c.characterId }
+                inflateRow(it, c.title, Store.t("privateChat"), Store.t("open"), ch?.avatar) {
                     openScreen(ChatActivity::class.java) { it.putExtra("id", c.id) }
                 }
             }
             story.forEach { c ->
+                val ch = Store.state.characters.find { it.id == c.characterId }
                 val sn = Store.state.stories.find { s -> s.id == c.storyId }?.name.orEmpty()
-                inflateRow(it, c.title, sn, Store.t("open")) {
+                inflateRow(it, c.title, sn, Store.t("open"), ch?.avatar) {
                     openScreen(ChatActivity::class.java) { it.putExtra("id", c.id) }
                 }
             }
@@ -198,6 +217,36 @@ class MainActivity : AppCompatActivity() {
         s.btnDark.setOnClickListener { Store.setAppearance("dark"); refresh() }
         s.btnLight.setOnClickListener { Store.setAppearance("light"); refresh() }
         s.btnSystem.setOnClickListener { Store.setAppearance("system"); refresh() }
+        s.btnNewPersona.setOnClickListener {
+            val isEn = Store.state.locale == "en"
+            val newP = Persona(
+                id = Store.nid(),
+                name = if (isEn) "New Persona" else "新角色卡",
+                avatar = null,
+                description = "",
+                createdAt = Store.now(),
+                updatedAt = Store.now(),
+            )
+            Store.state.personas.add(newP)
+            Store.state.activePersonaId = newP.id
+            Store.state.userName = newP.name
+            Store.state.userPersona = newP.description
+            Store.persist()
+            refreshSettings()
+        }
+        s.personaAvatarContainer.setOnClickListener { pickPersonaAvatar.launch("image/*") }
+        s.personaAvatarContainer.setOnLongClickListener {
+            val active = Store.state.personas.find { it.id == Store.state.activePersonaId } ?: Store.state.personas.firstOrNull()
+            if (active?.avatar != null) {
+                confirm(this, Store.t("deleteQ")) {
+                    active.avatar = null
+                    active.updatedAt = Store.now()
+                    Store.persist()
+                    refreshSettings()
+                }
+            }
+            true
+        }
         s.btnNewProfile.setOnClickListener {
             val p = ApiProfile(Store.nid(), if (Store.state.locale == "en") "OpenAI" else "OpenAI 兼容", "openai", "https://api.openai.com/v1", "gpt-4o-mini", "")
             Store.state.profiles.add(p)
@@ -240,13 +289,24 @@ class MainActivity : AppCompatActivity() {
                 val v = s.etUserName.text?.toString().orEmpty()
                 if (v != Store.state.userName) {
                     Store.state.userName = v
+                    val active = Store.state.personas.find { it.id == Store.state.activePersonaId } ?: Store.state.personas.firstOrNull()
+                    if (active != null) {
+                        active.name = v
+                        active.updatedAt = Store.now()
+                    }
                     Store.persist()
+                    renderAvatar(s.personaAvatar, s.personaAvatarImg, v, active?.avatar)
                 }
             })
             s.etUserPersona.addTextChangedListener(SimpleWatcher {
                 val v = s.etUserPersona.text?.toString().orEmpty()
                 if (v != Store.state.userPersona) {
                     Store.state.userPersona = v
+                    val active = Store.state.personas.find { it.id == Store.state.activePersonaId } ?: Store.state.personas.firstOrNull()
+                    if (active != null) {
+                        active.description = v
+                        active.updatedAt = Store.now()
+                    }
                     Store.persist()
                 }
             })
@@ -276,12 +336,56 @@ class MainActivity : AppCompatActivity() {
         s.languageHint.text = Store.t("languageHint")
         paintChip(s.btnZh, onZh)
         paintChip(s.btnEn, !onZh)
-        s.labelPersona.text = Store.t("persona")
+
+        s.labelPersona.text = Store.t("personas")
         s.personaHint.text = Store.t("personaHint")
+        s.btnNewPersona.text = "+ ${Store.t("addPersona")}"
         s.labelUserName.text = Store.t("personaName")
         s.labelUserPersona.text = Store.t("personaBio")
+
+        val activePersona = Store.state.personas.find { it.id == Store.state.activePersonaId } ?: Store.state.personas.firstOrNull()
+        if (activePersona != null) {
+            if (Store.state.userName.isBlank() || Store.state.userName != activePersona.name) {
+                Store.state.userName = activePersona.name
+            }
+            if (Store.state.userPersona != activePersona.description) {
+                Store.state.userPersona = activePersona.description
+            }
+        }
+        renderAvatar(s.personaAvatar, s.personaAvatarImg, activePersona?.name ?: "你", activePersona?.avatar)
         if (s.etUserName.text?.toString() != Store.state.userName) s.etUserName.setText(Store.state.userName)
         if (s.etUserPersona.text?.toString() != Store.state.userPersona) s.etUserPersona.setText(Store.state.userPersona)
+
+        s.personaList.removeAllViews()
+        Store.state.personas.forEach { p ->
+            val isActive = p.id == Store.state.activePersonaId
+            val meta = if (isActive) "★ ${Store.t("activePersona")}" else Store.t("useThisPersona")
+            val row = inflateRow(s.personaList, p.name, p.description.ifBlank { Store.t("noDesc") }, meta, p.avatar) {
+                Store.state.activePersonaId = p.id
+                Store.state.userName = p.name
+                Store.state.userPersona = p.description
+                Store.persist()
+                refreshSettings()
+            }
+            row.setOnLongClickListener {
+                if (Store.state.personas.size > 1) {
+                    confirm(this, Store.t("deleteQ")) {
+                        Store.state.personas.removeAll { it.id == p.id }
+                        if (Store.state.activePersonaId == p.id) {
+                            val next = Store.state.personas.firstOrNull()
+                            Store.state.activePersonaId = next?.id
+                            if (next != null) {
+                                Store.state.userName = next.name
+                                Store.state.userPersona = next.description
+                            }
+                        }
+                        Store.persist()
+                        refreshSettings()
+                    }
+                }
+                true
+            }
+        }
         s.labelProfiles.text = Store.t("apiProfiles")
         s.btnNewProfile.text = "+ ${Store.t("newProfile")}"
         s.noProfiles.text = Store.t("noProfiles")

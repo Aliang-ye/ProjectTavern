@@ -62,12 +62,13 @@ object Engine {
         return kept
     }
 
-    fun build(conversationId: String): PromptBuilt {
+    fun build(conversationId: String, tipMessageId: String? = null): PromptBuilt {
         val s = Store.state
         val conv = s.conversations.find { it.id == conversationId } ?: return PromptBuilt(emptyList(), "")
         val ch = s.characters.find { it.id == conv.characterId }
         val preset = s.presets.find { it.id == conv.presetId } ?: Store.localePresets().firstOrNull()
-        val history = visible(conversationId, conv.tipMessageId)
+        val effectiveTip = tipMessageId ?: conv.tipMessageId
+        val history = visible(conversationId, effectiveTip)
         val contextHistory = trimHistoryForContext(history, preset)
         val histText = contextHistory.joinToString("\n") { if (it.role == "assistant") display(it) else it.content }
         val worldIds = if (conv.worldBookIds.isNotEmpty()) conv.worldBookIds else {
@@ -76,13 +77,17 @@ object Engine {
         val worlds = s.worldBooks.filter { it.id in worldIds }
         val entries = matchEntries(histText, s.entries.filter { it.worldBookId in worldIds })
         val lock = if (s.locale == "en") Store.t("lockEn") else Store.t("lockZh")
-        val userName = s.userName.ifBlank { if (s.locale == "en") "You" else "你" }
+        val persona = s.personas.find { it.id == conv.personaId }
+            ?: s.personas.find { it.id == s.activePersonaId }
+            ?: s.personas.firstOrNull()
+        val userName = persona?.name?.ifBlank { null } ?: s.userName.ifBlank { if (s.locale == "en") "You" else "你" }
+        val userPersona = persona?.description?.ifBlank { null } ?: s.userPersona
         fun fill(t: String) = t.replace("{{user}}", userName)
 
         val sys = StringBuilder()
         sys.append("## LANGUAGE\n").append(lock).append("\n\n")
         sys.append("## PERSONA\nThe user is ").append(userName)
-        if (s.userPersona.isNotBlank()) sys.append("\n").append(s.userPersona)
+        if (userPersona.isNotBlank()) sys.append("\n").append(userPersona)
         sys.append("\n\n")
         if (preset != null) sys.append("## SYSTEM\n").append(preset.systemPrompt).append("\n\n")
         if (ch != null) {
@@ -101,8 +106,11 @@ object Engine {
 
         val messages = mutableListOf("system" to sys.toString().trim())
         for (m in contextHistory) {
-            val role = if (m.role == "assistant") "assistant" else "user"
-            messages.add(role to if (m.role == "assistant") display(m) else m.content)
+            val text = if (m.role == "assistant") display(m).trim() else m.content.trim()
+            if (text.isNotBlank()) {
+                val role = if (m.role == "assistant") "assistant" else "user"
+                messages.add(role to text)
+            }
         }
         val debug = "blocks=${messages.size} worlds=${worlds.size} entries=${entries.size} history=${contextHistory.size}"
         return PromptBuilt(messages, debug)

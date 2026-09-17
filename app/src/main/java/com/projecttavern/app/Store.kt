@@ -111,22 +111,76 @@ object Store {
         persist()
     }
 
-    fun startConversation(characterId: String, storyId: String?): String? {
-        val ch = state.characters.find { it.id == characterId } ?: return null
+    fun ensureWorldGm(worldId: String, worldName: String): Character {
+        val existing = state.characters.find { it.id == "gm-$worldId" }
+            ?: state.characters.find { defaultWorldId(it.id) == worldId && (it.tags.contains("GM") || it.name.endsWith("GM")) }
+        if (existing != null) return existing
+        val isEn = state.locale == "en"
+        val gm = Character(
+            id = "gm-$worldId",
+            name = "$worldName · GM",
+            description = if (isEn) "Game Master and narrator for $worldName." else "负责主持与引导【$worldName】的故事发展、环境描写与NPC互动。",
+            personality = if (isEn) "Immersive, descriptive, observant storyteller." else "客观、富有沉浸感、生动的世界GM与故事讲述者。",
+            scenario = if (isEn) "Guiding the journey in $worldName." else "身处于【$worldName】之中。",
+            firstMessage = if (isEn) "Welcome to $worldName. Where would you like to begin your adventure?" else "「欢迎来到【$worldName】。命运的卷轴已然展开，你想从哪里开始你的冒险？」",
+            systemPrompt = if (isEn) """
+                You are the Game Master and World Narrator for $worldName.
+                Guide the narrative, depict scenery and NPCs vividly, and react to {{user}}'s actions without making decisions for {{user}}.
+            """.trimIndent() else """
+                你是【$worldName】的地下城主/世界引导者（Game Master / Narrator）。
+                你的任务：
+                1. 根据世界书的背景设定与规则，生动描绘玩家所处的环境、遭遇的角色与发生的事件；
+                2. 维持世界观的一致性与沉浸感，严格遵循世界书的地理、历史与常态设定；
+                3. 推动剧情发展，在适当时候给予玩家选择与悬念，但绝不代替玩家（{{user}}）做出决定或发言；
+                4. 采用小说化第三人称或旁白视角，语言优美、充满氛围感。
+            """.trimIndent(),
+            tags = mutableListOf("GM", "世界引导"),
+            createdAt = now(),
+            updatedAt = now(),
+        )
+        state.characters.add(gm)
+        setDefaultWorld(gm.id, worldId)
+        persist()
+        return gm
+    }
+
+    fun startConversation(characterId: String? = null, storyId: String? = null, personaId: String? = null): String? {
+        val cid = if (!characterId.isNullOrBlank()) {
+            characterId
+        } else if (storyId != null) {
+            val story = state.stories.find { it.id == storyId }
+            val main = state.participants.find { it.storyId == storyId && it.role == "MAIN_CHARACTER" }
+                ?: state.participants.firstOrNull { it.storyId == storyId }
+            if (main != null) {
+                main.characterId
+            } else {
+                val wid = story?.worldBookIds?.firstOrNull() ?: state.worldBooks.firstOrNull()?.id
+                val world = state.worldBooks.find { it.id == wid }
+                if (world != null) {
+                    ensureWorldGm(world.id, world.name).id
+                } else state.characters.firstOrNull()?.id
+            }
+        } else state.characters.firstOrNull()?.id
+
+        val ch = state.characters.find { it.id == cid } ?: return null
         val worlds = mutableListOf<String>()
-        defaultWorldId(characterId)?.let { worlds.add(it) }
+        defaultWorldId(ch.id)?.let { worlds.add(it) }
         if (storyId != null) {
             state.stories.find { it.id == storyId }?.worldBookIds?.let { worlds.addAll(it) }
         }
         val greeting = if (ch.alternateGreetings.isNotEmpty() && Math.random() > 0.55) {
             ch.alternateGreetings.random()
-        } else ch.firstMessage
+        } else ch.firstMessage.ifBlank {
+            if (state.locale == "en") "Hello, traveler." else "你好，旅人。"
+        }
         val presetId = localePresets().firstOrNull()?.id ?: state.presets.firstOrNull()?.id.orEmpty()
         val storyName = storyId?.let { sid -> state.stories.find { it.id == sid }?.name }
+        val effectivePersonaId = personaId ?: if (storyId != null) state.stories.find { it.id == storyId }?.personaId else null ?: state.activePersonaId
         val conv = Conversation(
             id = nid(),
             storyId = storyId,
-            characterId = characterId,
+            characterId = ch.id,
+            personaId = effectivePersonaId,
             worldBookIds = worlds.distinct().toMutableList(),
             presetId = presetId,
             title = if (storyName != null) "$storyName · ${ch.name}" else ch.name,
@@ -156,6 +210,24 @@ object Store {
         if (state.userPersona.isBlank()) state.userPersona = ""
         if (state.appearance.isNullOrBlank()) state.appearance = "dark"
         if (first) state.streaming = true
+        if (state.personas.isEmpty()) {
+            val defaultPersona = Persona(
+                id = "persona-default",
+                name = state.userName.ifBlank { if (state.locale == "en") "You" else "你" },
+                avatar = null,
+                description = state.userPersona,
+                createdAt = now(),
+                updatedAt = now(),
+            )
+            state.personas.add(defaultPersona)
+            state.activePersonaId = defaultPersona.id
+        }
+        if (state.activePersonaId == null || state.personas.none { it.id == state.activePersonaId }) {
+            state.activePersonaId = state.personas.firstOrNull()?.id
+        }
+        state.worldBooks.forEach { w ->
+            ensureWorldGm(w.id, w.name)
+        }
         state.profiles.forEach { p ->
             if (p.provider != "claude") p.provider = "openai"
         }
@@ -228,9 +300,34 @@ object Store {
             createdAt = t0,
             updatedAt = t0,
         )
+        val gm = Character(
+            id = "gm-world-dusk",
+            name = "暮色酒馆 · GM",
+            description = "负责主持与引导【暮色酒馆】世界的故事发展、环境描写与NPC互动。",
+            personality = "客观、富有沉浸感、生动的世界GM与故事讲述者。",
+            scenario = "身处于【暮色酒馆】之中，关注着旅人的每一步选择。",
+            firstMessage = "「推开酒馆厚重的橡木门，湿冷的夜雨被隔绝在身后。吧台里的艾莉丝抬头看了你一眼，角落里的莱恩仍在擦拭着剑鞘。你打算走向何处？」",
+            systemPrompt = "你是【暮色酒馆】的地下城主/世界引导者（Game Master / Narrator）。维持沉浸感与酒馆氛围，不替用户行动。",
+            tags = mutableListOf("GM", "世界引导"),
+            createdAt = t0,
+            updatedAt = t0,
+        )
+        val defPersona = Persona(
+            id = "persona-default",
+            name = "你",
+            avatar = null,
+            description = "一个走进暮色酒馆的旅人。话不多，观察入微。",
+            createdAt = t0,
+            updatedAt = t0,
+        )
         return TavernState(
-            characters = mutableListOf(alice, raen),
-            characterWorldBooks = mutableListOf(CharacterWorldBook("char-alice", "world-dusk", true)),
+            characters = mutableListOf(alice, raen, gm),
+            characterWorldBooks = mutableListOf(
+                CharacterWorldBook("char-alice", "world-dusk", true),
+                CharacterWorldBook(gm.id, "world-dusk", true),
+            ),
+            personas = mutableListOf(defPersona),
+            activePersonaId = defPersona.id,
             worldBooks = mutableListOf(world),
             entries = mutableListOf(
                 WorldBookEntry("entry-const", "world-dusk", "酒馆常态", mutableListOf(), mutableListOf(),
@@ -243,13 +340,13 @@ object Store {
                     "白塔城坐落在雾河两岸。桥是白石的，塔是更白的石。入城要验印信；没有印信的人，通常会先被引到河西的酒馆「醒一醒」。",
                     75, true, false, 100, "after_char"),
             ),
-            stories = mutableListOf(Story("story-first", "第一夜", "雨夜走进暮色酒馆。艾莉丝主场，莱恩在角落里听着。", mutableListOf("world-dusk"), t0, t0)),
+            stories = mutableListOf(Story(id = "story-first", name = "第一夜", description = "雨夜走进暮色酒馆。艾莉丝主场，莱恩在角落里听着。", worldBookIds = mutableListOf("world-dusk"), personaId = defPersona.id, createdAt = t0, updatedAt = t0)),
             participants = mutableListOf(
                 StoryParticipant("part-main", "story-first", "char-alice", "MAIN_CHARACTER", true, 100),
                 StoryParticipant("part-comp", "story-first", "char-raen", "COMPANION", true, 50),
             ),
             conversations = mutableListOf(
-                Conversation("conv-welcome", "story-first", "char-alice", null, mutableListOf("world-dusk"), "preset-novel", "第一夜 · 进门", "msg-greet", t0, t0),
+                Conversation(id = "conv-welcome", storyId = "story-first", characterId = "char-alice", worldBookIds = mutableListOf("world-dusk"), presetId = "preset-novel", personaId = defPersona.id, title = "第一夜 · 进门", tipMessageId = "msg-greet", createdAt = t0, updatedAt = t0),
             ),
             messages = mutableListOf(
                 ChatMessage("msg-greet", "conv-welcome", null, "assistant", alice.firstMessage,

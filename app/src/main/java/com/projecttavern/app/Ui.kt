@@ -3,18 +3,63 @@ package com.projecttavern.app
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Typeface
+import android.net.Uri
 import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
+import java.io.File
 
 fun Context.dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
 fun letter(name: String) = name.trim().take(1).ifBlank { "?" }
+
+fun renderAvatar(tv: TextView, img: ImageView?, name: String, avatarPath: String?) {
+    if (!avatarPath.isNullOrBlank() && File(avatarPath).exists()) {
+        try {
+            val bmp = BitmapFactory.decodeFile(avatarPath)
+            if (bmp != null) {
+                img?.setImageBitmap(bmp)
+                img?.visibility = View.VISIBLE
+                tv.visibility = View.GONE
+                return
+            }
+        } catch (_: Exception) {}
+    }
+    img?.visibility = View.GONE
+    tv.visibility = View.VISIBLE
+    tv.text = letter(name)
+}
+
+fun saveAvatar(ctx: Context, id: String, uri: Uri): String? {
+    return try {
+        val dir = File(ctx.filesDir, "avatars").apply { mkdirs() }
+        val dest = File(dir, "${id}_${System.currentTimeMillis()}.jpg")
+        ctx.contentResolver.openInputStream(uri)?.use { input ->
+            val bmp = BitmapFactory.decodeStream(input) ?: return null
+            val maxSide = 512
+            val scaled = if (bmp.width > maxSide || bmp.height > maxSide) {
+                val ratio = minOf(maxSide.toFloat() / bmp.width, maxSide.toFloat() / bmp.height)
+                val w = (bmp.width * ratio).toInt().coerceAtLeast(1)
+                val h = (bmp.height * ratio).toInt().coerceAtLeast(1)
+                Bitmap.createScaledBitmap(bmp, w, h, true)
+            } else bmp
+            dest.outputStream().use { out ->
+                scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
+            }
+            dest.absolutePath
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
 
 fun Activity.openScreen(target: Class<*>, extras: ((Intent) -> Intent)? = null) {
     val intent = Intent(this, target)
@@ -23,11 +68,12 @@ fun Activity.openScreen(target: Class<*>, extras: ((Intent) -> Intent)? = null) 
     overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
 }
 
-fun inflateRow(parent: LinearLayout, title: String, subtitle: String, meta: String = "", onClick: () -> Unit): View {
+fun inflateRow(parent: LinearLayout, title: String, subtitle: String, meta: String = "", avatarPath: String? = null, onClick: () -> Unit): View {
     val v = LayoutInflater.from(parent.context).inflate(R.layout.item_row, parent, false)
     val avatar = v.findViewById<TextView>(R.id.avatar)
+    val avatarImg = v.findViewById<ImageView>(R.id.avatarImg)
     val metaView = v.findViewById<TextView>(R.id.meta)
-    avatar.text = letter(title)
+    renderAvatar(avatar, avatarImg, title, avatarPath)
     v.findViewById<TextView>(R.id.title).text = title
     v.findViewById<TextView>(R.id.subtitle).text = subtitle
     metaView.text = meta

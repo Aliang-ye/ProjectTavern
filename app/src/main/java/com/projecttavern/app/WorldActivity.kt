@@ -48,6 +48,15 @@ class WorldActivity : AppCompatActivity() {
         b.lName.text = Store.t("name")
         b.etName.setText(w.name)
         b.sectionsHint.text = Store.t("sectionsHint")
+
+        val gm = Store.ensureWorldGm(w.id, w.name)
+        b.gmTitle.text = gm.name
+        b.gmSubtitle.text = Store.t("gmDesc")
+        b.btnEditGm.text = Store.t("viewGm")
+        renderAvatar(b.gmAvatar, b.gmAvatarImg, gm.name, gm.avatar)
+        b.gmCard.setOnClickListener { openScreen(CharacterActivity::class.java) { it.putExtra("id", gm.id) } }
+        b.btnEditGm.setOnClickListener { openScreen(CharacterActivity::class.java) { it.putExtra("id", gm.id) } }
+
         b.lEntries.text = "${Store.t("entries")} ${Store.state.entries.count { it.worldBookId == id }}"
         b.btnAddEntry.text = "+ ${Store.t("addEntry")}"
         b.btnDelete.text = Store.t("delete")
@@ -153,8 +162,9 @@ class WorldActivity : AppCompatActivity() {
     private fun save() {
         val w = current() ?: return
         writeSection()
-        w.name = b.etName.text.toString()
+        w.name = b.etName.text.toString().ifBlank { Store.t("newWorld") }
         w.updatedAt = Store.now()
+        Store.ensureWorldGm(w.id, w.name)
         Store.persist()
     }
 }

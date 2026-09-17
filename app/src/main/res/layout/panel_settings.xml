@@ -118,13 +118,31 @@
                 android:textColor="@color/ink" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/labelPersona"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:textColor="@color/candle"
-            android:textSize="13sp" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/labelPersona"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="@color/candle"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/btnNewPersona"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_chip_on"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="6dp"
+                android:textColor="@color/on_candle"
+                android:textSize="12sp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/personaHint"
@@ -134,23 +152,70 @@
             android:textColor="@color/muted"
             android:textSize="12sp" />
 
-        <TextView
-            android:id="@+id/labelUserName"
+        <LinearLayout
+            android:id="@+id/personaList"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:textColor="@color/muted"
-            android:textSize="12sp" />
+            android:orientation="vertical" />
 
-        <EditText
-            android:id="@+id/etUserName"
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="44dp"
-            android:layout_marginTop="6dp"
-            android:background="@drawable/bg_input"
-            android:paddingHorizontal="12dp"
-            android:textColor="@color/ink"
-            android:textSize="14sp" />
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <FrameLayout
+                android:id="@+id/personaAvatarContainer"
+                android:layout_width="48dp"
+                android:layout_height="48dp">
+
+                <TextView
+                    android:id="@+id/personaAvatar"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_avatar"
+                    android:fontFamily="serif"
+                    android:gravity="center"
+                    android:textColor="@color/ink"
+                    android:textSize="16sp" />
+
+                <ImageView
+                    android:id="@+id/personaAvatarImg"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_avatar"
+                    android:clipToOutline="true"
+                    android:scaleType="centerCrop"
+                    android:visibility="gone" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/labelUserName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/muted"
+                    android:textSize="12sp" />
+
+                <EditText
+                    android:id="@+id/etUserName"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/bg_input"
+                    android:paddingHorizontal="12dp"
+                    android:textColor="@color/ink"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </LinearLayout>
 
         <TextView
             android:id="@+id/labelUserPersona"
@@ -167,7 +232,7 @@
             android:layout_marginTop="6dp"
             android:background="@drawable/bg_input"
             android:gravity="top"
-            android:minHeight="96dp"
+            android:minHeight="80dp"
             android:padding="12dp"
             android:textColor="@color/ink"
             android:textSize="14sp" />

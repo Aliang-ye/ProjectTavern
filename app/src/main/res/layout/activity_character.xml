@@ -61,15 +61,30 @@
                 android:orientation="horizontal"
                 android:padding="16dp">
 
-                <TextView
-                    android:id="@+id/avatar"
+                <FrameLayout
+                    android:id="@+id/avatarContainer"
                     android:layout_width="64dp"
-                    android:layout_height="64dp"
-                    android:background="@drawable/bg_avatar"
-                    android:fontFamily="serif"
-                    android:gravity="center"
-                    android:textColor="@color/ink"
-                    android:textSize="24sp" />
+                    android:layout_height="64dp">
+
+                    <TextView
+                        android:id="@+id/avatar"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@drawable/bg_avatar"
+                        android:fontFamily="serif"
+                        android:gravity="center"
+                        android:textColor="@color/ink"
+                        android:textSize="24sp" />
+
+                    <ImageView
+                        android:id="@+id/avatarImg"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@drawable/bg_avatar"
+                        android:clipToOutline="true"
+                        android:scaleType="centerCrop"
+                        android:visibility="gone" />
+                </FrameLayout>
 
                 <TextView
                     android:id="@+id/tapAvatar"

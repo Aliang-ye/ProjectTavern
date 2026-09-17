@@ -2,6 +2,8 @@ package com.projecttavern.app
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -20,14 +22,12 @@ class StoryActivity : AppCompatActivity() {
         setContentView(b.root)
         b.btnBack.setOnClickListener { finish() }
         b.btnSave.setOnClickListener { save(); finish() }
+        b.btnAddMain.setOnClickListener { pickCharacter("MAIN_CHARACTER") }
         b.btnAddCompanion.setOnClickListener { pickCharacter("COMPANION") }
         b.btnAddNpc.setOnClickListener { pickCharacter("NPC") }
         b.btnStart.setOnClickListener {
             save()
-            val main = Store.state.participants.find { it.storyId == id && it.role == "MAIN_CHARACTER" }
-                ?: Store.state.participants.find { it.storyId == id }
-            val cid = main?.characterId ?: return@setOnClickListener
-            val conv = Store.startConversation(cid, id) ?: return@setOnClickListener
+            val conv = Store.startConversation(null, id, current()?.personaId) ?: return@setOnClickListener
             startActivity(Intent(this, ChatActivity::class.java).putExtra("id", conv))
         }
         b.btnDelete.setOnClickListener {
@@ -50,12 +50,20 @@ class StoryActivity : AppCompatActivity() {
         b.btnSave.text = Store.t("save")
         b.lName.text = Store.t("name"); b.etName.setText(st.name)
         b.lDesc.text = Store.t("storyDesc"); b.etDesc.setText(st.description)
+        b.lPersona.text = Store.t("storyPersona")
         b.lWorld.text = Store.t("storyWorld")
         b.lCast.text = Store.t("storyCast")
+        b.btnAddMain.text = "+ ${Store.t("roleMain")}"
         b.btnAddCompanion.text = Store.t("addCompanion")
         b.btnAddNpc.text = Store.t("addNpc")
         b.btnStart.text = Store.t("startChat")
         b.btnDelete.text = Store.t("delete")
+
+        val personaNames = listOf(Store.t("storyPersonaDefault")) + Store.state.personas.map { it.name }
+        b.spPersona.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, personaNames)
+        val pIdx = Store.state.personas.indexOfFirst { it.id == st.personaId }
+        b.spPersona.setSelection(if (pIdx >= 0) pIdx + 1 else 0)
+
         b.worldList.removeAllViews()
         Store.state.worldBooks.forEach { w ->
             val cb = CheckBox(this)
@@ -69,44 +77,42 @@ class StoryActivity : AppCompatActivity() {
             b.worldList.addView(cb)
         }
         b.castList.removeAllViews()
-        Store.state.participants.filter { it.storyId == id }.forEach { p ->
-            val c = Store.state.characters.find { it.id == p.characterId }
-            val role = when (p.role) {
-                "MAIN_CHARACTER" -> Store.t("roleMain")
-                "COMPANION" -> Store.t("roleCompanion")
-                else -> Store.t("roleNpc")
+        val parts = Store.state.participants.filter { it.storyId == id }
+        if (parts.isEmpty()) {
+            val emptyTv = TextView(this)
+            emptyTv.text = Store.t("noMainOptional")
+            emptyTv.setTextColor(getColor(R.color.muted))
+            emptyTv.textSize = 13f
+            emptyTv.setPadding(0, dp(4), 0, dp(4))
+            b.castList.addView(emptyTv)
+        } else {
+            parts.forEach { p ->
+                val c = Store.state.characters.find { it.id == p.characterId }
+                val role = when (p.role) {
+                    "MAIN_CHARACTER" -> Store.t("roleMain")
+                    "COMPANION" -> Store.t("roleCompanion")
+                    else -> Store.t("roleNpc")
+                }
+                val row = LinearLayout(this)
+                row.orientation = LinearLayout.HORIZONTAL
+                val tv = TextView(this)
+                tv.text = "${c?.name ?: "?"} · $role"
+                tv.setTextColor(getColor(R.color.ink))
+                tv.textSize = 14f
+                tv.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                val rm = TextView(this)
+                rm.text = Store.t("delete")
+                rm.setTextColor(getColor(R.color.wine))
+                rm.setOnClickListener {
+                    Store.state.participants.removeAll { it.id == p.id }
+                    Store.persist()
+                    bind()
+                }
+                row.addView(tv); row.addView(rm)
+                row.setPadding(0, dp(6), 0, dp(6))
+                b.castList.addView(row)
             }
-            val row = LinearLayout(this)
-            row.orientation = LinearLayout.HORIZONTAL
-            val tv = TextView(this)
-            tv.text = "${c?.name ?: "?"} · $role"
-            tv.setTextColor(getColor(R.color.ink))
-            tv.textSize = 14f
-            tv.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            val rm = TextView(this)
-            rm.text = Store.t("delete")
-            rm.setTextColor(getColor(R.color.wine))
-            rm.setOnClickListener {
-                Store.state.participants.removeAll { it.id == p.id }
-                Store.persist()
-                bind()
-            }
-            row.addView(tv); row.addView(rm)
-            row.setPadding(0, dp(6), 0, dp(6))
-            b.castList.addView(row)
         }
-        if (Store.state.participants.none { it.storyId == id && it.role == "MAIN_CHARACTER" }) {
-            pickHint()
-        }
-    }
-
-    private fun pickHint() {
-        val tv = TextView(this)
-        tv.text = Store.t("roleMain")
-        tv.setTextColor(getColor(R.color.candle))
-        tv.setPadding(0, dp(8), 0, dp(8))
-        tv.setOnClickListener { pickCharacter("MAIN_CHARACTER") }
-        b.castList.addView(tv)
     }
 
     private fun pickCharacter(role: String) {
@@ -127,8 +133,10 @@ class StoryActivity : AppCompatActivity() {
 
     private fun save() {
         val st = current() ?: return
-        st.name = b.etName.text.toString()
+        st.name = b.etName.text.toString().ifBlank { Store.t("newStory") }
         st.description = b.etDesc.text.toString()
+        val sel = b.spPersona.selectedItemPosition
+        st.personaId = if (sel <= 0) null else Store.state.personas.getOrNull(sel - 1)?.id
         st.updatedAt = Store.now()
         Store.persist()
     }

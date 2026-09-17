@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -116,10 +117,10 @@ class ChatActivity : AppCompatActivity() {
         c.updatedAt = Store.now()
         Store.persist()
         refresh()
-        generate(asst)
+        generate(asst, user.id)
     }
 
-    private fun generate(asst: ChatMessage) {
+    private fun generate(asst: ChatMessage, fallbackTipId: String? = null) {
         val profile = Store.activeProfile() ?: return
         val preset = Store.state.presets.find { it.id == conv()?.presetId } ?: Store.localePresets().firstOrNull() ?: return
         busy = true
@@ -127,7 +128,7 @@ class ChatActivity : AppCompatActivity() {
         b.err.visibility = View.GONE
         thread {
             try {
-                val built = Engine.build(convId)
+                val built = Engine.build(convId, fallbackTipId ?: asst.parentId)
                 val full = Llm.stream(profile, built.messages, preset) { piece ->
                     if (!Store.state.streaming) return@stream
                     runOnUiThread {
@@ -159,7 +160,15 @@ class ChatActivity : AppCompatActivity() {
                     busy = false
                     paintSend()
                     b.err.visibility = View.VISIBLE
-                    b.err.text = e.message ?: "error"
+                    b.err.text = "${Store.t("error")}: ${e.message ?: "error"}"
+                    if (asst.content.isBlank()) {
+                        Store.state.messages.removeAll { it.id == asst.id }
+                        if (conv()?.tipMessageId == asst.id) {
+                            conv()?.tipMessageId = fallbackTipId ?: asst.parentId
+                        }
+                        Store.persist()
+                        refresh()
+                    }
                 }
             }
         }
@@ -184,7 +193,7 @@ class ChatActivity : AppCompatActivity() {
         conv()?.tipMessageId = m.id
         Store.persist()
         refresh()
-        generate(m)
+        generate(m, m.parentId)
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
@@ -207,7 +216,9 @@ class ChatActivity : AppCompatActivity() {
             actions.removeAllViews()
             if (m.role == "assistant") {
                 nameRow.visibility = View.VISIBLE
-                h.v.findViewById<TextView>(R.id.avatar).text = letter(ch?.name ?: "?")
+                val avatarTv = h.v.findViewById<TextView>(R.id.avatar)
+                val avatarImg = h.v.findViewById<ImageView>(R.id.avatarImg)
+                renderAvatar(avatarTv, avatarImg, ch?.name ?: "?", ch?.avatar)
                 h.v.findViewById<TextView>(R.id.speaker).text = ch?.name ?: ""
                 body.visibility = View.VISIBLE
                 user.visibility = View.GONE
