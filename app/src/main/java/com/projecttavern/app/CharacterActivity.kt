@@ -49,6 +49,14 @@ class CharacterActivity : AppCompatActivity() {
             val cid = Store.startConversation(id, null) ?: return@setOnClickListener
             startActivity(Intent(this, ChatActivity::class.java).putExtra("id", cid))
         }
+        b.btnExport.setOnClickListener {
+            save()
+            val ch = current() ?: return@setOnClickListener
+            val json = Store.exportCharacter(ch)
+            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("character", json))
+            android.widget.Toast.makeText(this, Store.t("copied"), android.widget.Toast.LENGTH_SHORT).show()
+        }
         b.btnDup.setOnClickListener {
             val ch = current() ?: return@setOnClickListener
             save()
@@ -95,6 +103,7 @@ class CharacterActivity : AppCompatActivity() {
         b.lSystem.text = Store.t("systemPrompt"); b.etSystem.setText(c.systemPrompt)
         b.lNotes.text = Store.t("creatorNotes"); b.etNotes.setText(c.creatorNotes)
         b.lWorld.text = Store.t("defaultWorld")
+        b.btnExport.text = Store.t("exportCharacter")
         b.btnDup.text = Store.t("duplicate")
         b.btnDelete.text = Store.t("delete")
         val worlds = listOf(Store.t("none")) + Store.state.worldBooks.map { it.name }

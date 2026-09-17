@@ -30,6 +30,61 @@ object Llm {
         else streamOpenAI(profile, messages, preset, onDelta)
     }
 
+    fun testConnection(p: ApiProfile): Pair<Boolean, String> {
+        val apiKey = p.apiKey.replace("\r", "").replace("\n", "").trim()
+        if (apiKey.isBlank()) {
+            return false to (if (Store.state.locale == "en") "API Key is empty" else "API Key 为空")
+        }
+        val startTime = System.currentTimeMillis()
+        try {
+            val req = if (p.provider == "claude") {
+                val body = JSONObject()
+                    .put("model", p.model.trim().ifBlank { "claude-3-haiku-20240307" })
+                    .put("max_tokens", 5)
+                    .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "ping")))
+                    .toString()
+                Request.Builder()
+                    .url(claudeUrl(p))
+                    .addHeader("x-api-key", apiKey)
+                    .addHeader("anthropic-version", "2023-06-01")
+                    .addHeader("Content-Type", "application/json")
+                    .post(body.toRequestBody("application/json".toMediaType()))
+                    .build()
+            } else {
+                val body = JSONObject()
+                    .put("model", p.model.trim().ifBlank { "gpt-3.5-turbo" })
+                    .put("max_tokens", 5)
+                    .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "ping")))
+                    .toString()
+                Request.Builder()
+                    .url(openaiUrl(p))
+                    .addHeader("Authorization", "Bearer $apiKey")
+                    .addHeader("Content-Type", "application/json")
+                    .post(body.toRequestBody("application/json".toMediaType()))
+                    .build()
+            }
+            val testClient = client.newBuilder()
+                .connectTimeout(12, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build()
+            val response = testClient.newCall(req).execute()
+            val duration = System.currentTimeMillis() - startTime
+            val code = response.code
+            val body = response.body?.string().orEmpty()
+            response.close()
+            if (response.isSuccessful) {
+                return true to "✓ ${Store.t("testSuccess")} (${duration}ms)"
+            } else {
+                val detail = mapStatus(code, body)
+                return false to "${Store.t("testFailed")}: $detail"
+            }
+        } catch (e: Exception) {
+            val duration = System.currentTimeMillis() - startTime
+            val msg = e.localizedMessage ?: e.message ?: "Network error"
+            return false to "${Store.t("testFailed")} (${duration}ms): $msg"
+        }
+    }
+
     private fun openaiUrl(p: ApiProfile): String {
         val raw = (p.endpoint.ifBlank { "https://api.openai.com/v1" }).trimEnd('/')
         return when {

@@ -65,6 +65,10 @@ class MainActivity : AppCompatActivity() {
             Store.persist()
             openScreen(CharacterActivity::class.java) { it.putExtra("id", c.id) }
         }
+        b.panelCharacters.fab.setOnLongClickListener {
+            showImportCharacterDialog()
+            true
+        }
         b.panelWorlds.fab.setOnClickListener {
             val w = WorldBook(id = Store.nid(), name = Store.t("newWorld"), createdAt = Store.now(), updatedAt = Store.now())
             Store.state.worldBooks.add(0, w)
@@ -138,6 +142,46 @@ class MainActivity : AppCompatActivity() {
         p.panelHint.visibility = if (hint.isBlank()) View.GONE else View.VISIBLE
         p.search.visibility = if (p === b.panelCharacters) View.VISIBLE else View.GONE
         p.fab.visibility = if (fab) View.VISIBLE else View.GONE
+        if (p === b.panelCharacters) {
+            p.panelAction.visibility = View.VISIBLE
+            p.panelAction.text = Store.t("importCharacter")
+            p.panelAction.setOnClickListener { showImportCharacterDialog() }
+        } else {
+            p.panelAction.visibility = View.GONE
+        }
+    }
+
+    private fun showImportCharacterDialog() {
+        val et = EditText(this).apply {
+            hint = Store.t("pasteCharacterJson")
+            minLines = 4
+            maxLines = 10
+            isVerticalScrollBarEnabled = true
+            background = androidx.core.content.ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_input)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setTextColor(androidx.core.content.ContextCompat.getColor(this@MainActivity, R.color.ink))
+            setHintTextColor(androidx.core.content.ContextCompat.getColor(this@MainActivity, R.color.muted))
+        }
+        val container = LinearLayout(this).apply {
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            addView(et, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("importCharacter"))
+            .setView(container)
+            .setPositiveButton(Store.t("import")) { _, _ ->
+                val json = et.text.toString().trim()
+                if (json.isBlank()) return@setPositiveButton
+                val ch = Store.importCharacter(json)
+                if (ch != null) {
+                    refresh()
+                    Toast.makeText(this, "${Store.t("characterImported")}: ${ch.name}", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, Store.t("invalidCharacterJson"), Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
     }
 
     private fun refreshCharacters() {

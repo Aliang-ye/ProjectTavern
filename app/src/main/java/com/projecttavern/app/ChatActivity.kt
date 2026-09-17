@@ -28,8 +28,25 @@ class ChatActivity : AppCompatActivity() {
         b = ActivityChatBinding.inflate(layoutInflater)
         setContentView(b.root)
         adapter = MsgAdapter()
-        b.messages.layoutManager = LinearLayoutManager(this)
+        val layoutManager = LinearLayoutManager(this)
+        b.messages.layoutManager = layoutManager
         b.messages.adapter = adapter
+        b.messages.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                val lastPos = layoutManager.findLastVisibleItemPosition()
+                val total = adapter.itemCount
+                if (total > 0 && lastPos < total - 2) {
+                    b.btnScrollBottom.visibility = View.VISIBLE
+                } else {
+                    b.btnScrollBottom.visibility = View.GONE
+                }
+            }
+        })
+        b.btnScrollBottom.setOnClickListener {
+            if (adapter.itemCount > 0) {
+                b.messages.smoothScrollToPosition(adapter.itemCount - 1)
+            }
+        }
         b.btnBack.setOnClickListener { finish() }
         b.btnSend.setOnClickListener { if (busy) stop() else send() }
         b.btnDebug.setOnClickListener {
@@ -222,6 +239,100 @@ class ChatActivity : AppCompatActivity() {
         generate(m, m.parentId)
     }
 
+    private fun continueGenerate(asst: ChatMessage) {
+        val profile = Store.activeProfile()
+        if (profile == null || profile.apiKey.isBlank()) {
+            toast(Store.t("needProfile"))
+            return
+        }
+        val preset = Store.state.presets.find { it.id == conv()?.presetId }
+            ?: Store.localePresets().firstOrNull()
+            ?: Store.state.presets.firstOrNull()
+        if (preset == null || busy) return
+        busy = true
+        paintSend()
+        b.err.visibility = View.GONE
+        val promptBuilt = Engine.build(convId, asst.id)
+        val continuePrompt = if (Store.state.locale == "en") {
+            "[Instruction: Continue the narrative directly from the very last sentence. Do not repeat what was already written.]"
+        } else {
+            "【系统指令：直接顺承上文最后一句继续描写后续剧情与对话，严禁重复已有内容。】"
+        }
+        val messages = promptBuilt.messages.toMutableList()
+        messages.add("user" to continuePrompt)
+        thread {
+            try {
+                val full = Llm.stream(profile, messages, preset) { piece ->
+                    if (!Store.state.streaming) return@stream
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        val g = asst.generations.getOrNull(asst.generationIndex)
+                        if (g != null) {
+                            g.content += piece
+                            asst.content = g.content
+                        } else {
+                            asst.content += piece
+                        }
+                        val lastIdx = adapter.items.indexOfFirst { it.id == asst.id }
+                        if (lastIdx >= 0) adapter.notifyItemChanged(lastIdx, Unit)
+                    }
+                }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    val g = asst.generations.getOrNull(asst.generationIndex)
+                    if (g != null && full.isNotBlank()) g.content = asst.content
+                    Store.persist()
+                    busy = false
+                    paintSend()
+                    refresh()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    busy = false
+                    paintSend()
+                    b.err.visibility = View.VISIBLE
+                    b.err.text = "${Store.t("error")}: ${e.message ?: "error"}"
+                }
+            }
+        }
+    }
+
+    private fun showEditMessageDialog(m: ChatMessage) {
+        val et = android.widget.EditText(this)
+        val initialText = if (m.role == "assistant") Engine.display(m) else m.content
+        et.setText(initialText)
+        et.setTextColor(getColor(R.color.ink))
+        et.setHintTextColor(getColor(R.color.muted))
+        et.minLines = 5
+        et.gravity = android.view.Gravity.TOP
+        et.background = getDrawable(R.drawable.bg_input)
+        et.setPadding(dp(12), dp(12), dp(12), dp(12))
+        val pad = dp(16)
+        val box = android.widget.FrameLayout(this)
+        box.setPadding(pad, dp(12), pad, dp(4))
+        box.addView(et)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("editMessage"))
+            .setView(box)
+            .setPositiveButton(Store.t("save")) { _, _ ->
+                val newText = et.text.toString().trim()
+                if (newText.isNotBlank()) {
+                    if (m.role == "assistant") {
+                        val g = m.generations.getOrNull(m.generationIndex)
+                        if (g != null) g.content = newText
+                        m.content = newText
+                    } else {
+                        m.content = newText
+                    }
+                    m.createdAt = Store.now()
+                    Store.persist()
+                    refresh()
+                }
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
+
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
 
     inner class MsgAdapter : RecyclerView.Adapter<MsgAdapter.VH>() {
@@ -264,6 +375,8 @@ class ChatActivity : AppCompatActivity() {
                     cm.setPrimaryClip(android.content.ClipData.newPlainText("t", Engine.display(m)))
                     Toast.makeText(this@ChatActivity, Store.t("copied"), Toast.LENGTH_SHORT).show()
                 })
+                actions.addView(actionLabel(this@ChatActivity, Store.t("edit"), muted) { showEditMessageDialog(m) })
+                actions.addView(actionLabel(this@ChatActivity, Store.t("continueChat"), candle) { continueGenerate(m) })
                 actions.addView(actionLabel(this@ChatActivity, Store.t("regenerate"), candle) { regenerate(m) })
                 if (m.generations.size > 1) {
                     actions.addView(actionLabel(this@ChatActivity, "${m.generationIndex + 1}/${m.generations.size}", muted) {
@@ -288,20 +401,24 @@ class ChatActivity : AppCompatActivity() {
                 user.visibility = View.VISIBLE
                 user.text = m.content
                 user.setOnLongClickListener {
-                    val opts = arrayOf(Store.t("copy"), Store.t("delete"))
+                    val opts = arrayOf(Store.t("edit"), Store.t("copy"), Store.t("delete"))
                     androidx.appcompat.app.AlertDialog.Builder(this@ChatActivity)
                         .setItems(opts) { _, which ->
-                            if (which == 0) {
-                                val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                cm.setPrimaryClip(android.content.ClipData.newPlainText("t", m.content))
-                                Toast.makeText(this@ChatActivity, Store.t("copied"), Toast.LENGTH_SHORT).show()
-                            } else {
-                                confirm(this@ChatActivity, Store.t("deleteQ")) {
-                                    Store.state.messages.filter { it.parentId == m.id }.forEach { it.parentId = m.parentId }
-                                    Store.state.messages.removeAll { it.id == m.id }
-                                    if (conv()?.tipMessageId == m.id) conv()?.tipMessageId = m.parentId
-                                    Store.persist()
-                                    refresh()
+                            when (which) {
+                                0 -> showEditMessageDialog(m)
+                                1 -> {
+                                    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    cm.setPrimaryClip(android.content.ClipData.newPlainText("t", m.content))
+                                    Toast.makeText(this@ChatActivity, Store.t("copied"), Toast.LENGTH_SHORT).show()
+                                }
+                                2 -> {
+                                    confirm(this@ChatActivity, Store.t("deleteQ")) {
+                                        Store.state.messages.filter { it.parentId == m.id }.forEach { it.parentId = m.parentId }
+                                        Store.state.messages.removeAll { it.id == m.id }
+                                        if (conv()?.tipMessageId == m.id) conv()?.tipMessageId = m.parentId
+                                        Store.persist()
+                                        refresh()
+                                    }
                                 }
                             }
                         }

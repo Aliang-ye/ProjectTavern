@@ -96,6 +96,26 @@ object Store {
 
     fun backupJson(): String = gson.toJson(redactedStateForWrite())
 
+    fun exportCharacter(ch: Character): String = gson.toJson(ch)
+
+    fun importCharacter(jsonStr: String): Character? {
+        return try {
+            val ch = gson.fromJson(jsonStr.trim(), Character::class.java)
+            if (ch != null && ch.name.isNotBlank()) {
+                ch.id = nid()
+                ch.createdAt = now()
+                ch.updatedAt = now()
+                if (ch.tags == null) ch.tags = mutableListOf()
+                if (ch.alternateGreetings == null) ch.alternateGreetings = mutableListOf()
+                state.characters.add(0, ch)
+                persist()
+                ch
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun activeProfile(): ApiProfile? = state.profiles.find { it.id == state.activeProfileId }
 
     fun localePresets() = state.presets.filter { it.locale == state.locale }

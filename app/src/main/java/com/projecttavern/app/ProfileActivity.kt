@@ -28,12 +28,45 @@ class ProfileActivity : AppCompatActivity() {
                 finish()
             }
         }
+        b.btnTest.setOnClickListener {
+            val endpoint = b.etEndpoint.text.toString().trim().ifBlank {
+                if (provider == "claude") "https://api.anthropic.com" else "https://api.openai.com/v1"
+            }
+            val model = b.etModel.text.toString().trim().ifBlank {
+                if (provider == "claude") "claude-sonnet-4-5" else "gpt-4o-mini"
+            }
+            val key = b.etKey.text.toString().replace("\r", "").replace("\n", "").trim()
+            val tempProfile = ApiProfile(
+                id = id,
+                name = b.etName.text.toString(),
+                provider = provider,
+                endpoint = endpoint,
+                model = model,
+                apiKey = key
+            )
+            b.btnTest.isEnabled = false
+            b.btnTest.text = Store.t("testing")
+            b.tvTestResult.visibility = android.view.View.VISIBLE
+            b.tvTestResult.setTextColor(getColor(R.color.muted))
+            b.tvTestResult.text = Store.t("testing")
+            kotlin.concurrent.thread {
+                val (ok, msg) = Llm.testConnection(tempProfile)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    b.btnTest.isEnabled = true
+                    b.btnTest.text = Store.t("testConnection")
+                    b.tvTestResult.text = msg
+                    b.tvTestResult.setTextColor(getColor(if (ok) R.color.candle else R.color.wine))
+                }
+            }
+        }
         bind(p)
     }
 
     private fun bind(p: ApiProfile) {
         b.headerTitle.text = Store.t("apiProfiles")
         b.btnSave.text = Store.t("save")
+        b.btnTest.text = Store.t("testConnection")
         b.lName.text = Store.t("name"); b.etName.setText(p.name)
         b.lProvider.text = if (Store.state.locale == "en") "Provider" else "提供商"
         b.btnOpenai.text = Store.t("providerOpenai")
