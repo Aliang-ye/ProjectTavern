@@ -80,7 +80,7 @@ class ProfileActivity : AppCompatActivity() {
         p.model = b.etModel.text.toString().trim().ifBlank {
             if (provider == "claude") "claude-sonnet-4-5" else "gpt-4o-mini"
         }
-        p.apiKey = b.etKey.text.toString().trim()
+        p.apiKey = b.etKey.text.toString().replace("\r", "").replace("\n", "").trim()
         Store.state.activeProfileId = p.id
         Store.persist()
     }

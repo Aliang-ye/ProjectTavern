@@ -124,7 +124,13 @@ class StoryActivity : AppCompatActivity() {
                 if (role == "MAIN_CHARACTER") {
                     Store.state.participants.filter { it.storyId == id && it.role == "MAIN_CHARACTER" }.forEach { it.role = "COMPANION" }
                 }
-                Store.state.participants.add(StoryParticipant(Store.nid(), id, ch.id, role, true, if (role == "MAIN_CHARACTER") 100 else 50))
+                val existing = Store.state.participants.find { it.storyId == id && it.characterId == ch.id }
+                if (existing != null) {
+                    existing.role = role
+                    existing.priority = if (role == "MAIN_CHARACTER") 100 else 50
+                } else {
+                    Store.state.participants.add(StoryParticipant(Store.nid(), id, ch.id, role, true, if (role == "MAIN_CHARACTER") 100 else 50))
+                }
                 Store.persist()
                 bind()
             }

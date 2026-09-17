@@ -82,9 +82,22 @@ class ChatActivity : AppCompatActivity() {
         })
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        Llm.cancel()
+    }
+
     private fun paintSend() {
         b.btnSend.text = if (busy) "■" else Store.t("send").take(2)
         b.btnSend.setBackgroundResource(if (busy) R.drawable.bg_stop else R.drawable.bg_send)
+        val c = conv() ?: return
+        val contextText = if (c.storyId == null) Store.t("privateChat") else Store.state.stories.find { it.id == c.storyId }?.name ?: Store.t("stories")
+        val live = if (busy) {
+            if (Store.state.locale == "en") "Streaming" else "流式中"
+        } else {
+            if (Store.state.locale == "en") "Ready" else "就绪"
+        }
+        b.headerSub.text = "$contextText · $live"
     }
 
     private fun path(): List<ChatMessage> {
@@ -121,8 +134,21 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun generate(asst: ChatMessage, fallbackTipId: String? = null) {
-        val profile = Store.activeProfile() ?: return
-        val preset = Store.state.presets.find { it.id == conv()?.presetId } ?: Store.localePresets().firstOrNull() ?: return
+        val profile = Store.activeProfile()
+        if (profile == null || profile.apiKey.isBlank()) {
+            busy = false
+            paintSend()
+            toast(Store.t("needProfile"))
+            return
+        }
+        val preset = Store.state.presets.find { it.id == conv()?.presetId }
+            ?: Store.localePresets().firstOrNull()
+            ?: Store.state.presets.firstOrNull()
+        if (preset == null) {
+            busy = false
+            paintSend()
+            return
+        }
         busy = true
         paintSend()
         b.err.visibility = View.GONE
@@ -209,17 +235,24 @@ class ChatActivity : AppCompatActivity() {
         override fun onBindViewHolder(h: VH, position: Int) {
             val m = items[position]
             val ch = Store.state.characters.find { it.id == conv()?.characterId }
+            val story = Store.state.stories.find { it.id == conv()?.storyId }
+            val mainPart = Store.state.participants.find { it.storyId == conv()?.storyId && it.role == "MAIN_CHARACTER" }
+                ?: Store.state.participants.firstOrNull { it.storyId == conv()?.storyId }
+            val displayCh = ch ?: Store.state.characters.find { it.id == mainPart?.characterId }
+            val displayName = displayCh?.name ?: story?.name ?: conv()?.title ?: "?"
+            val displayAvatar = displayCh?.avatar
             val body = h.v.findViewById<TextView>(R.id.body)
             val user = h.v.findViewById<TextView>(R.id.userBody)
             val nameRow = h.v.findViewById<LinearLayout>(R.id.nameRow)
             val actions = h.v.findViewById<LinearLayout>(R.id.actions)
             actions.removeAllViews()
             if (m.role == "assistant") {
+                user.setOnLongClickListener(null)
                 nameRow.visibility = View.VISIBLE
                 val avatarTv = h.v.findViewById<TextView>(R.id.avatar)
                 val avatarImg = h.v.findViewById<ImageView>(R.id.avatarImg)
-                renderAvatar(avatarTv, avatarImg, ch?.name ?: "?", ch?.avatar)
-                h.v.findViewById<TextView>(R.id.speaker).text = ch?.name ?: ""
+                renderAvatar(avatarTv, avatarImg, displayName, displayAvatar)
+                h.v.findViewById<TextView>(R.id.speaker).text = displayName
                 body.visibility = View.VISIBLE
                 user.visibility = View.GONE
                 body.text = Engine.display(m).ifBlank { if (busy && position == items.lastIndex) "…" else "" }
@@ -229,6 +262,7 @@ class ChatActivity : AppCompatActivity() {
                 actions.addView(actionLabel(this@ChatActivity, Store.t("copy"), muted) {
                     val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
                     cm.setPrimaryClip(android.content.ClipData.newPlainText("t", Engine.display(m)))
+                    Toast.makeText(this@ChatActivity, Store.t("copied"), Toast.LENGTH_SHORT).show()
                 })
                 actions.addView(actionLabel(this@ChatActivity, Store.t("regenerate"), candle) { regenerate(m) })
                 if (m.generations.size > 1) {
@@ -240,16 +274,40 @@ class ChatActivity : AppCompatActivity() {
                     })
                 }
                 actions.addView(actionLabel(this@ChatActivity, Store.t("delete"), wine) {
-                    Store.state.messages.removeAll { it.id == m.id }
-                    if (conv()?.tipMessageId == m.id) conv()?.tipMessageId = m.parentId
-                    Store.persist()
-                    refresh()
+                    confirm(this@ChatActivity, Store.t("deleteQ")) {
+                        Store.state.messages.filter { it.parentId == m.id }.forEach { it.parentId = m.parentId }
+                        Store.state.messages.removeAll { it.id == m.id }
+                        if (conv()?.tipMessageId == m.id) conv()?.tipMessageId = m.parentId
+                        Store.persist()
+                        refresh()
+                    }
                 })
             } else {
                 nameRow.visibility = View.GONE
                 body.visibility = View.GONE
                 user.visibility = View.VISIBLE
                 user.text = m.content
+                user.setOnLongClickListener {
+                    val opts = arrayOf(Store.t("copy"), Store.t("delete"))
+                    androidx.appcompat.app.AlertDialog.Builder(this@ChatActivity)
+                        .setItems(opts) { _, which ->
+                            if (which == 0) {
+                                val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                cm.setPrimaryClip(android.content.ClipData.newPlainText("t", m.content))
+                                Toast.makeText(this@ChatActivity, Store.t("copied"), Toast.LENGTH_SHORT).show()
+                            } else {
+                                confirm(this@ChatActivity, Store.t("deleteQ")) {
+                                    Store.state.messages.filter { it.parentId == m.id }.forEach { it.parentId = m.parentId }
+                                    Store.state.messages.removeAll { it.id == m.id }
+                                    if (conv()?.tipMessageId == m.id) conv()?.tipMessageId = m.parentId
+                                    Store.persist()
+                                    refresh()
+                                }
+                            }
+                        }
+                        .show()
+                    true
+                }
             }
         }
     }

@@ -147,11 +147,26 @@ class MainActivity : AppCompatActivity() {
         }
         fill(b.panelCharacters.list) {
             list.forEach { c ->
-                inflateRow(it, c.name, c.description.ifBlank { Store.t("noDesc") }, Store.t("privateChat"), c.avatar) {
+                val row = inflateRow(it, c.name, c.description.ifBlank { Store.t("noDesc") }, Store.t("privateChat"), c.avatar) {
                     openScreen(CharacterActivity::class.java) { it.putExtra("id", c.id) }
-                }.findViewById<TextView>(R.id.meta).setOnClickListener { _ ->
+                }
+                row.findViewById<TextView>(R.id.meta).setOnClickListener { _ ->
                     val id = Store.startConversation(c.id, null) ?: return@setOnClickListener
                     openScreen(ChatActivity::class.java) { it.putExtra("id", id) }
+                }
+                row.setOnLongClickListener {
+                    confirm(this@MainActivity, Store.t("deleteQ")) {
+                        Store.state.characters.removeAll { it.id == c.id }
+                        Store.state.characterWorldBooks.removeAll { it.characterId == c.id }
+                        Store.state.participants.removeAll { it.characterId == c.id }
+                        val removedConvs = Store.state.conversations.filter { it.characterId == c.id && it.storyId == null }
+                        val removedIds = removedConvs.map { it.id }.toSet()
+                        Store.state.messages.removeAll { it.conversationId in removedIds }
+                        Store.state.conversations.removeAll { it.id in removedIds }
+                        Store.persist()
+                        refresh()
+                    }
+                    true
                 }
             }
         }
@@ -162,8 +177,21 @@ class MainActivity : AppCompatActivity() {
             Store.state.worldBooks.forEach { w ->
                 val n = Store.state.entries.count { e -> e.worldBookId == w.id }
                 val filled = listOf(w.description, w.geography, w.history, w.institutions, w.culture, w.personalNotes).count { s -> s.isNotBlank() }
-                inflateRow(it, w.name, w.description.ifBlank { "$n ${Store.t("entries")}" }, "$filled/6") {
+                val row = inflateRow(it, w.name, w.description.ifBlank { "$n ${Store.t("entries")}" }, "$filled/6") {
                     openScreen(WorldActivity::class.java) { it.putExtra("id", w.id) }
+                }
+                row.setOnLongClickListener {
+                    confirm(this@MainActivity, Store.t("deleteQ")) {
+                        Store.state.worldBooks.removeAll { it.id == w.id }
+                        Store.state.entries.removeAll { it.worldBookId == w.id }
+                        Store.state.characterWorldBooks.removeAll { it.worldBookId == w.id }
+                        Store.state.characters.removeAll { it.id == "gm-${w.id}" }
+                        Store.state.stories.forEach { it.worldBookIds.remove(w.id) }
+                        Store.state.conversations.forEach { it.worldBookIds.remove(w.id) }
+                        Store.persist()
+                        refresh()
+                    }
+                    true
                 }
             }
         }
@@ -174,8 +202,18 @@ class MainActivity : AppCompatActivity() {
             Store.state.stories.forEach { st ->
                 val n = Store.state.participants.count { it.storyId == st.id }
                 val chats = Store.state.conversations.count { it.storyId == st.id }
-                inflateRow(it, st.name, st.description.ifBlank { Store.t("stories") }, "$n ${Store.t("people")} · $chats") {
+                val row = inflateRow(it, st.name, st.description.ifBlank { Store.t("stories") }, "$n ${Store.t("people")} · $chats") {
                     openScreen(StoryActivity::class.java) { it.putExtra("id", st.id) }
+                }
+                row.setOnLongClickListener {
+                    confirm(this@MainActivity, Store.t("deleteQ")) {
+                        Store.state.stories.removeAll { it.id == st.id }
+                        Store.state.participants.removeAll { it.storyId == st.id }
+                        Store.state.conversations.filter { it.storyId == st.id }.forEach { it.storyId = null }
+                        Store.persist()
+                        refresh()
+                    }
+                    true
                 }
             }
         }
@@ -194,15 +232,33 @@ class MainActivity : AppCompatActivity() {
             }
             priv.forEach { c ->
                 val ch = Store.state.characters.find { it.id == c.characterId }
-                inflateRow(it, c.title, Store.t("privateChat"), Store.t("open"), ch?.avatar) {
+                val row = inflateRow(it, c.title, Store.t("privateChat"), Store.t("open"), ch?.avatar) {
                     openScreen(ChatActivity::class.java) { it.putExtra("id", c.id) }
+                }
+                row.setOnLongClickListener {
+                    confirm(this@MainActivity, Store.t("deleteQ")) {
+                        Store.state.messages.removeAll { m -> m.conversationId == c.id }
+                        Store.state.conversations.removeAll { conv -> conv.id == c.id }
+                        Store.persist()
+                        refresh()
+                    }
+                    true
                 }
             }
             story.forEach { c ->
                 val ch = Store.state.characters.find { it.id == c.characterId }
                 val sn = Store.state.stories.find { s -> s.id == c.storyId }?.name.orEmpty()
-                inflateRow(it, c.title, sn, Store.t("open"), ch?.avatar) {
+                val row = inflateRow(it, c.title, sn, Store.t("open"), ch?.avatar) {
                     openScreen(ChatActivity::class.java) { it.putExtra("id", c.id) }
+                }
+                row.setOnLongClickListener {
+                    confirm(this@MainActivity, Store.t("deleteQ")) {
+                        Store.state.messages.removeAll { m -> m.conversationId == c.id }
+                        Store.state.conversations.removeAll { conv -> conv.id == c.id }
+                        Store.persist()
+                        refresh()
+                    }
+                    true
                 }
             }
         }
@@ -371,6 +427,8 @@ class MainActivity : AppCompatActivity() {
                 if (Store.state.personas.size > 1) {
                     confirm(this, Store.t("deleteQ")) {
                         Store.state.personas.removeAll { it.id == p.id }
+                        Store.state.stories.filter { it.personaId == p.id }.forEach { it.personaId = null }
+                        Store.state.conversations.filter { it.personaId == p.id }.forEach { it.personaId = null }
                         if (Store.state.activePersonaId == p.id) {
                             val next = Store.state.personas.firstOrNull()
                             Store.state.activePersonaId = next?.id

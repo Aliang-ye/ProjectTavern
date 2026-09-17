@@ -30,6 +30,10 @@ class WorldActivity : AppCompatActivity() {
             confirm(this, Store.t("deleteQ")) {
                 Store.state.worldBooks.removeAll { it.id == id }
                 Store.state.entries.removeAll { it.worldBookId == id }
+                Store.state.characterWorldBooks.removeAll { it.worldBookId == id }
+                Store.state.characters.removeAll { it.id == "gm-$id" }
+                Store.state.stories.forEach { it.worldBookIds.remove(id) }
+                Store.state.conversations.forEach { it.worldBookIds.remove(id) }
                 Store.persist()
                 finish()
             }

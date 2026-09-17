@@ -89,12 +89,41 @@ object Engine {
         sys.append("## PERSONA\nThe user is ").append(userName)
         if (userPersona.isNotBlank()) sys.append("\n").append(userPersona)
         sys.append("\n\n")
-        if (preset != null) sys.append("## SYSTEM\n").append(preset.systemPrompt).append("\n\n")
+        if (preset != null && preset.systemPrompt.isNotBlank()) {
+            sys.append("## SYSTEM\n").append(preset.systemPrompt).append("\n\n")
+        }
         if (ch != null) {
             sys.append("## CHARACTER\nName: ").append(ch.name)
-                .append("\nDescription: ").append(fill(ch.description))
-                .append("\nPersonality: ").append(ch.personality)
-                .append("\nScenario: ").append(fill(ch.scenario)).append("\n\n")
+            if (ch.description.isNotBlank()) sys.append("\nDescription: ").append(fill(ch.description))
+            if (ch.personality.isNotBlank()) sys.append("\nPersonality: ").append(fill(ch.personality))
+            if (ch.scenario.isNotBlank()) sys.append("\nScenario: ").append(fill(ch.scenario))
+            if (ch.systemPrompt.isNotBlank()) sys.append("\nInstructions: ").append(fill(ch.systemPrompt))
+            if (ch.exampleDialogues.isNotBlank()) sys.append("\nExample Dialogues:\n").append(fill(ch.exampleDialogues))
+            sys.append("\n\n")
+        }
+
+        if (conv.storyId != null) {
+            val story = s.stories.find { it.id == conv.storyId }
+            if (story != null) {
+                sys.append("## STORY\nTitle: ").append(story.name)
+                if (story.description.isNotBlank()) sys.append("\nPlot: ").append(fill(story.description))
+                sys.append("\n\n")
+                val parts = s.participants.filter { it.storyId == story.id && it.characterId != ch?.id }
+                if (parts.isNotEmpty()) {
+                    sys.append("## CAST\n")
+                    for (p in parts) {
+                        val pch = s.characters.find { it.id == p.characterId } ?: continue
+                        val roleLabel = when (p.role) {
+                            "MAIN_CHARACTER" -> if (s.locale == "en") "Protagonist" else "主角"
+                            "COMPANION" -> if (s.locale == "en") "Companion" else "同伴"
+                            else -> if (s.locale == "en") "NPC" else "NPC"
+                        }
+                        sys.append("- [").append(pch.name).append("] (").append(roleLabel).append("): ")
+                            .append(fill(pch.description.ifBlank { pch.personality })).append("\n")
+                    }
+                    sys.append("\n")
+                }
+            }
         }
 
         // [Community Edition] Standard world lore attachment

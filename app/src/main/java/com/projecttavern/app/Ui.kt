@@ -33,6 +33,7 @@ fun renderAvatar(tv: TextView, img: ImageView?, name: String, avatarPath: String
             }
         } catch (_: Exception) {}
     }
+    img?.setImageDrawable(null)
     img?.visibility = View.GONE
     tv.visibility = View.VISIBLE
     tv.text = letter(name)
@@ -41,6 +42,7 @@ fun renderAvatar(tv: TextView, img: ImageView?, name: String, avatarPath: String
 fun saveAvatar(ctx: Context, id: String, uri: Uri): String? {
     return try {
         val dir = File(ctx.filesDir, "avatars").apply { mkdirs() }
+        dir.listFiles()?.filter { it.name.startsWith("${id}_") }?.forEach { it.delete() }
         val dest = File(dir, "${id}_${System.currentTimeMillis()}.jpg")
         ctx.contentResolver.openInputStream(uri)?.use { input ->
             val bmp = BitmapFactory.decodeStream(input) ?: return null

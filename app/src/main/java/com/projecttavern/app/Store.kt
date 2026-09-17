@@ -114,7 +114,12 @@ object Store {
     fun ensureWorldGm(worldId: String, worldName: String): Character {
         val existing = state.characters.find { it.id == "gm-$worldId" }
             ?: state.characters.find { defaultWorldId(it.id) == worldId && (it.tags.contains("GM") || it.name.endsWith("GM")) }
-        if (existing != null) return existing
+        if (existing != null) {
+            if (existing.id == "gm-$worldId" && !existing.name.startsWith(worldName)) {
+                existing.name = "$worldName · GM"
+            }
+            return existing
+        }
         val isEn = state.locale == "en"
         val gm = Character(
             id = "gm-$worldId",
@@ -175,7 +180,9 @@ object Store {
         }
         val presetId = localePresets().firstOrNull()?.id ?: state.presets.firstOrNull()?.id.orEmpty()
         val storyName = storyId?.let { sid -> state.stories.find { it.id == sid }?.name }
-        val effectivePersonaId = personaId ?: if (storyId != null) state.stories.find { it.id == storyId }?.personaId else null ?: state.activePersonaId
+        val effectivePersonaId = personaId
+            ?: (if (storyId != null) state.stories.find { it.id == storyId }?.personaId else null)
+            ?: state.activePersonaId
         val conv = Conversation(
             id = nid(),
             storyId = storyId,
@@ -205,6 +212,33 @@ object Store {
     }
 
     private fun migrate() {
+        if (state.characters == null) state.characters = mutableListOf()
+        if (state.characterWorldBooks == null) state.characterWorldBooks = mutableListOf()
+        if (state.worldBooks == null) state.worldBooks = mutableListOf()
+        if (state.entries == null) state.entries = mutableListOf()
+        if (state.stories == null) state.stories = mutableListOf()
+        if (state.participants == null) state.participants = mutableListOf()
+        if (state.conversations == null) state.conversations = mutableListOf()
+        if (state.messages == null) state.messages = mutableListOf()
+        if (state.presets == null) state.presets = mutableListOf()
+        if (state.profiles == null) state.profiles = mutableListOf()
+        if (state.personas == null) state.personas = mutableListOf()
+        if (state.memories == null) state.memories = mutableListOf()
+
+        state.characters.forEach {
+            if (it.tags == null) it.tags = mutableListOf()
+            if (it.alternateGreetings == null) it.alternateGreetings = mutableListOf()
+        }
+        state.stories.forEach {
+            if (it.worldBookIds == null) it.worldBookIds = mutableListOf()
+        }
+        state.conversations.forEach {
+            if (it.worldBookIds == null) it.worldBookIds = mutableListOf()
+        }
+        state.messages.forEach {
+            if (it.generations == null) it.generations = mutableListOf()
+        }
+
         val first = state.userPersona.isBlank()
         if (state.userName.isNullOrBlank()) state.userName = if (state.locale == "en") "You" else "你"
         if (state.userPersona.isBlank()) state.userPersona = ""

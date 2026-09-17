@@ -34,7 +34,8 @@ object Llm {
         val raw = (p.endpoint.ifBlank { "https://api.openai.com/v1" }).trimEnd('/')
         return when {
             raw.endsWith("/chat/completions") -> raw
-            raw.endsWith("/v1") -> "$raw/chat/completions"
+            raw.endsWith("/v1") || raw.endsWith("/v2") || raw.endsWith("/v3") || raw.endsWith("/v4") -> "$raw/chat/completions"
+            raw.contains("/v1/") || raw.contains("/v2/") || raw.contains("/v3/") || raw.contains("/v4/") -> "$raw/chat/completions"
             else -> "$raw/v1/chat/completions"
         }
     }
@@ -54,7 +55,7 @@ object Llm {
         preset: Preset,
         onDelta: (String) -> Unit,
     ): String {
-        val apiKey = p.apiKey.trim()
+        val apiKey = p.apiKey.replace("\r", "").replace("\n", "").trim()
         require(apiKey.isNotBlank()) { "OpenAI API key is required" }
 
         val arr = JSONArray()
@@ -64,7 +65,7 @@ object Llm {
         if (arr.length() == 0) return ""
         val effectiveMaxTokens = if (preset.responseBudget > 0) minOf(preset.maxTokens, preset.responseBudget) else preset.maxTokens
         val body = JSONObject()
-            .put("model", p.model)
+            .put("model", p.model.trim())
             .put("stream", true)
             .put("temperature", preset.temperature)
             .put("top_p", preset.topP)
@@ -73,12 +74,16 @@ object Llm {
             .toString()
         val req = Request.Builder()
             .url(openaiUrl(p))
-            .addHeader("Authorization", "Bearer " + p.apiKey)
+            .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Content-Type", "application/json")
             .post(body.toRequestBody("application/json".toMediaType()))
             .build()
         return readSse(req, onDelta) { json ->
-            json.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta")?.optString("content").orEmpty()
+            val choice = json.optJSONArray("choices")?.optJSONObject(0)
+            val delta = choice?.optJSONObject("delta")
+            delta?.optString("content")?.ifEmpty { null }
+                ?: choice?.optString("text")?.ifEmpty { null }
+                ?: ""
         }
     }
 
@@ -88,6 +93,8 @@ object Llm {
         preset: Preset,
         onDelta: (String) -> Unit,
     ): String {
+        val apiKey = p.apiKey.replace("\r", "").replace("\n", "").trim()
+        require(apiKey.isNotBlank()) { "Claude API key is required" }
         val system = messages.filter { it.first == "system" && it.second.isNotBlank() }.joinToString("\n\n") { it.second }
         val nonSystem = messages.filter { it.first != "system" && it.second.isNotBlank() }.toMutableList()
         if (nonSystem.isEmpty()) {
@@ -110,7 +117,7 @@ object Llm {
         }
         val effectiveMaxTokens = if (preset.responseBudget > 0) minOf(preset.maxTokens, preset.responseBudget) else preset.maxTokens
         val body = JSONObject()
-            .put("model", p.model)
+            .put("model", p.model.trim())
             .put("stream", true)
             .put("temperature", preset.temperature)
             .put("top_p", preset.topP)
@@ -119,7 +126,7 @@ object Llm {
         if (system.isNotBlank()) body.put("system", system)
         val req = Request.Builder()
             .url(claudeUrl(p))
-            .addHeader("x-api-key", p.apiKey)
+            .addHeader("x-api-key", apiKey)
             .addHeader("anthropic-version", "2023-06-01")
             .addHeader("Content-Type", "application/json")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
@@ -143,7 +150,6 @@ object Llm {
         }
 
         val full = StringBuilder()
-        var sawData = false
         val responseBody = res.body ?: run {
             res.close()
             currentCall = null
@@ -158,14 +164,22 @@ object Llm {
                 if (!s.startsWith("data:")) continue
                 val data = s.removePrefix("data:").trim()
                 if (data.isEmpty() || data == "[DONE]") continue
-                sawData = true
                 try {
-                    val piece = pick(JSONObject(data))
+                    val json = JSONObject(data)
+                    val errObj = json.optJSONObject("error")
+                    if (errObj != null) {
+                        val msg = errObj.optString("message").ifBlank { errObj.toString() }
+                        throw RuntimeException(msg)
+                    }
+                    val piece = pick(json)
                     if (piece.isNotEmpty()) {
                         full.append(piece)
                         onDelta(piece)
                     }
                 } catch (e: Exception) {
+                    if (e is RuntimeException && e.message != null && !e.message!!.startsWith("Malformed model stream")) {
+                        throw e
+                    }
                     val preview = data.take(180)
                     throw RuntimeException("Malformed model stream payload: $preview", e)
                 }
@@ -175,19 +189,27 @@ object Llm {
             currentCall = null
         }
 
-        if (!sawData && full.isEmpty()) {
-            throw RuntimeException("Model returned no stream data")
+        if (full.isEmpty()) {
+            throw RuntimeException(if (Store.state.locale == "en") "Model returned no text output" else "模型未返回任何有效文本")
         }
         return full.toString()
     }
 
     private fun mapStatus(code: Int, body: String): String {
+        val parsedMsg = try {
+            val json = JSONObject(body)
+            json.optJSONObject("error")?.optString("message")?.ifBlank { null }
+                ?: json.optString("message").ifBlank { null }
+        } catch (_: Exception) {
+            null
+        }
+        val detail = parsedMsg ?: body.take(180)
         return when (code) {
-            401, 403 -> "UNAUTHORIZED: key rejected"
-            404 -> "MODEL_NOT_FOUND"
-            429 -> "RATE_LIMIT"
-            in 500..599 -> "SERVER_ERROR"
-            else -> "Request failed ($code) ${body.take(180)}"
+            401, 403 -> if (detail.isNotBlank()) "UNAUTHORIZED (401/403): $detail" else "UNAUTHORIZED: API key rejected"
+            404 -> if (detail.isNotBlank()) "MODEL_NOT_FOUND (404): $detail" else "MODEL_NOT_FOUND (404)"
+            429 -> if (detail.isNotBlank()) "RATE_LIMIT (429): $detail" else "RATE_LIMIT: Quota exceeded or speed limit"
+            in 500..599 -> if (detail.isNotBlank()) "SERVER_ERROR ($code): $detail" else "SERVER_ERROR ($code)"
+            else -> "HTTP $code: $detail"
         }
     }
 }
