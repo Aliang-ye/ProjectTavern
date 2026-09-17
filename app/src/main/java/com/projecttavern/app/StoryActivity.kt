@@ -39,7 +39,31 @@ class StoryActivity : AppCompatActivity() {
                 finish()
             }
         }
+        b.tabStory.setOnClickListener { switchTab(0) }
+        b.tabCast.setOnClickListener { switchTab(1) }
+        b.tabWorlds.setOnClickListener { switchTab(2) }
+        setupTouchToHideKeyboard(b.root, this)
         bind()
+    }
+
+    private var activeTab = 0
+
+    private fun switchTab(tab: Int) {
+        activeTab = tab
+        hideKeyboard()
+        b.panelStory.visibility = if (tab == 0) View.VISIBLE else View.GONE
+        b.panelCast.visibility = if (tab == 1) View.VISIBLE else View.GONE
+        b.panelWorlds.visibility = if (tab == 2) View.VISIBLE else View.GONE
+
+        fun styleTab(tv: TextView, on: Boolean) {
+            tv.setBackgroundResource(if (on) R.drawable.bg_chip_on else R.drawable.bg_chip)
+            tv.setTextColor(androidx.core.content.ContextCompat.getColor(this, if (on) R.color.on_candle else R.color.ink))
+        }
+
+        styleTab(b.tabStory, tab == 0)
+        styleTab(b.tabCast, tab == 1)
+        styleTab(b.tabWorlds, tab == 2)
+        b.scrollContainer.smoothScrollTo(0, 0)
     }
 
     private fun current() = Store.state.stories.find { it.id == id }
@@ -48,6 +72,9 @@ class StoryActivity : AppCompatActivity() {
         val st = current() ?: return finish()
         b.headerTitle.text = st.name
         b.btnSave.text = Store.t("save")
+        b.tabStory.text = Store.t("tabStory")
+        b.tabCast.text = Store.t("tabCast")
+        b.tabWorlds.text = Store.t("tabWorlds")
         b.lName.text = Store.t("name"); b.etName.setText(st.name)
         b.lDesc.text = Store.t("storyDesc"); b.etDesc.setText(st.description)
         b.lPersona.text = Store.t("storyPersona")

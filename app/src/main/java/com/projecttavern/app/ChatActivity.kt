@@ -47,6 +47,7 @@ class ChatActivity : AppCompatActivity() {
                 b.messages.smoothScrollToPosition(adapter.itemCount - 1)
             }
         }
+        b.messages.setOnTouchListener { _, _ -> hideKeyboard(); false }
         b.btnBack.setOnClickListener { finish() }
         b.btnSend.setOnClickListener { if (busy) stop() else send() }
         b.btnDebug.setOnClickListener {

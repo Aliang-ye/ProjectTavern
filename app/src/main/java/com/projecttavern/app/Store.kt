@@ -134,25 +134,39 @@ object Store {
     fun ensureWorldGm(worldId: String, worldName: String): Character {
         val existing = state.characters.find { it.id == "gm-$worldId" }
             ?: state.characters.find { defaultWorldId(it.id) == worldId && (it.tags.contains("GM") || it.name.endsWith("GM")) }
+        val isEn = state.locale == "en"
+        val cleanName = worldName.trim().ifBlank { if (isEn) "New World" else "新世界" }
+
         if (existing != null) {
-            if (existing.id == "gm-$worldId" && !existing.name.startsWith(worldName)) {
-                existing.name = "$worldName · GM"
+            val oldName = existing.name.removeSuffix(" · GM").trim()
+            val hasPlaceholder = existing.description.contains("新世界") || existing.description.contains("New World")
+                || existing.systemPrompt.contains("新世界") || existing.systemPrompt.contains("New World")
+            if (oldName != cleanName || hasPlaceholder) {
+                existing.name = "$cleanName · GM"
+                val targets = listOf(oldName, "新世界", "New World").filter { it.isNotBlank() && it != cleanName }
+                for (target in targets) {
+                    existing.description = existing.description.replace("【$target】", "【$cleanName】").replace(target, cleanName)
+                    existing.scenario = existing.scenario.replace("【$target】", "【$cleanName】").replace(target, cleanName)
+                    existing.firstMessage = existing.firstMessage.replace("【$target】", "【$cleanName】").replace(target, cleanName)
+                    existing.systemPrompt = existing.systemPrompt.replace("【$target】", "【$cleanName】").replace(target, cleanName)
+                }
+                existing.updatedAt = now()
+                persist()
             }
             return existing
         }
-        val isEn = state.locale == "en"
         val gm = Character(
             id = "gm-$worldId",
-            name = "$worldName · GM",
-            description = if (isEn) "Game Master and narrator for $worldName." else "负责主持与引导【$worldName】的故事发展、环境描写与NPC互动。",
+            name = "$cleanName · GM",
+            description = if (isEn) "Game Master and narrator for $cleanName." else "负责主持与引导【$cleanName】的故事发展、环境描写与NPC互动。",
             personality = if (isEn) "Immersive, descriptive, observant storyteller." else "客观、富有沉浸感、生动的世界GM与故事讲述者。",
-            scenario = if (isEn) "Guiding the journey in $worldName." else "身处于【$worldName】之中。",
-            firstMessage = if (isEn) "Welcome to $worldName. Where would you like to begin your adventure?" else "「欢迎来到【$worldName】。命运的卷轴已然展开，你想从哪里开始你的冒险？」",
+            scenario = if (isEn) "Guiding the journey in $cleanName." else "身处于【$cleanName】之中。",
+            firstMessage = if (isEn) "Welcome to $cleanName. Where would you like to begin your adventure?" else "「欢迎来到【$cleanName】。命运的卷轴已然展开，你想从哪里开始你的冒险？」",
             systemPrompt = if (isEn) """
-                You are the Game Master and World Narrator for $worldName.
+                You are the Game Master and World Narrator for $cleanName.
                 Guide the narrative, depict scenery and NPCs vividly, and react to {{user}}'s actions without making decisions for {{user}}.
             """.trimIndent() else """
-                你是【$worldName】的地下城主/世界引导者（Game Master / Narrator）。
+                你是【$cleanName】的地下城主/世界引导者（Game Master / Narrator）。
                 你的任务：
                 1. 根据世界书的背景设定与规则，生动描绘玩家所处的环境、遭遇的角色与发生的事件；
                 2. 维持世界观的一致性与沉浸感，严格遵循世界书的地理、历史与常态设定；

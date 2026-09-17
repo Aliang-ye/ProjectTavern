@@ -79,7 +79,34 @@ class CharacterActivity : AppCompatActivity() {
                 finish()
             }
         }
+        b.tabBasic.setOnClickListener { switchTab(0) }
+        b.tabPersona.setOnClickListener { switchTab(1) }
+        b.tabDialogue.setOnClickListener { switchTab(2) }
+        b.tabPrompt.setOnClickListener { switchTab(3) }
+        setupTouchToHideKeyboard(b.root, this)
         bind()
+    }
+
+    private var activeTab = 0
+
+    private fun switchTab(tab: Int) {
+        activeTab = tab
+        hideKeyboard()
+        b.panelBasic.visibility = if (tab == 0) android.view.View.VISIBLE else android.view.View.GONE
+        b.panelPersona.visibility = if (tab == 1) android.view.View.VISIBLE else android.view.View.GONE
+        b.panelDialogue.visibility = if (tab == 2) android.view.View.VISIBLE else android.view.View.GONE
+        b.panelPrompt.visibility = if (tab == 3) android.view.View.VISIBLE else android.view.View.GONE
+
+        fun styleTab(tv: android.widget.TextView, on: Boolean) {
+            tv.setBackgroundResource(if (on) R.drawable.bg_chip_on else R.drawable.bg_chip)
+            tv.setTextColor(androidx.core.content.ContextCompat.getColor(this, if (on) R.color.on_candle else R.color.ink))
+        }
+
+        styleTab(b.tabBasic, tab == 0)
+        styleTab(b.tabPersona, tab == 1)
+        styleTab(b.tabDialogue, tab == 2)
+        styleTab(b.tabPrompt, tab == 3)
+        b.scrollContainer.smoothScrollTo(0, 0)
     }
 
     private fun current() = Store.state.characters.find { it.id == id }
@@ -88,6 +115,10 @@ class CharacterActivity : AppCompatActivity() {
         val c = current() ?: return finish()
         b.headerTitle.text = c.name
         b.btnSave.text = Store.t("save")
+        b.tabBasic.text = Store.t("tabBasic")
+        b.tabPersona.text = Store.t("tabPersona")
+        b.tabDialogue.text = Store.t("tabDialogue")
+        b.tabPrompt.text = Store.t("tabPrompt")
         renderAvatar(b.avatar, b.avatarImg, c.name, c.avatar)
         b.tapAvatar.text = Store.t("tapAvatar")
         b.btnPrivate.text = Store.t("privateChat")

@@ -28,6 +28,55 @@ class ProfileActivity : AppCompatActivity() {
                 finish()
             }
         }
+        b.chipDeepseek.setOnClickListener {
+            setProvider("openai")
+            b.etEndpoint.setText("https://api.deepseek.com/v1")
+            b.etModel.setText("deepseek-chat")
+            if (b.etName.text.isNullOrBlank() || b.etName.text.toString().startsWith("Profile")) {
+                b.etName.setText("DeepSeek")
+            }
+        }
+        b.chipSilicon.setOnClickListener {
+            setProvider("openai")
+            b.etEndpoint.setText("https://api.siliconflow.cn/v1")
+            b.etModel.setText("deepseek-ai/DeepSeek-V3")
+            if (b.etName.text.isNullOrBlank() || b.etName.text.toString().startsWith("Profile")) {
+                b.etName.setText("SiliconFlow")
+            }
+        }
+        b.chipZhipu.setOnClickListener {
+            setProvider("openai")
+            b.etEndpoint.setText("https://open.bigmodel.cn/api/paas/v4")
+            b.etModel.setText("glm-4-flash")
+            if (b.etName.text.isNullOrBlank() || b.etName.text.toString().startsWith("Profile")) {
+                b.etName.setText("智谱 GLM")
+            }
+        }
+        b.chipOllama.setOnClickListener {
+            setProvider("openai")
+            b.etEndpoint.setText("http://10.0.2.2:11434/v1")
+            b.etModel.setText("qwen2.5:7b")
+            if (b.etName.text.isNullOrBlank() || b.etName.text.toString().startsWith("Profile")) {
+                b.etName.setText("Ollama")
+            }
+        }
+        b.chipOpenai.setOnClickListener {
+            setProvider("openai")
+            b.etEndpoint.setText("https://api.openai.com/v1")
+            b.etModel.setText("gpt-4o-mini")
+            if (b.etName.text.isNullOrBlank() || b.etName.text.toString().startsWith("Profile")) {
+                b.etName.setText("OpenAI")
+            }
+        }
+        b.btnPasteKey.setOnClickListener {
+            val cm = getSystemService(CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            val text = cm?.primaryClip?.getItemAt(0)?.text?.toString()?.replace("\r", "")?.replace("\n", "")?.trim()
+            if (!text.isNullOrBlank()) {
+                b.etKey.setText(text)
+                android.widget.Toast.makeText(this, Store.t("keyPasted"), android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+        setupTouchToHideKeyboard(b.root, this)
         b.btnTest.setOnClickListener {
             val endpoint = b.etEndpoint.text.toString().trim().ifBlank {
                 if (provider == "claude") "https://api.anthropic.com" else "https://api.openai.com/v1"
@@ -67,6 +116,8 @@ class ProfileActivity : AppCompatActivity() {
         b.headerTitle.text = Store.t("apiProfiles")
         b.btnSave.text = Store.t("save")
         b.btnTest.text = Store.t("testConnection")
+        b.lPresetProviders.text = Store.t("presetProviders")
+        b.btnPasteKey.text = Store.t("pasteKey")
         b.lName.text = Store.t("name"); b.etName.setText(p.name)
         b.lProvider.text = if (Store.state.locale == "en") "Provider" else "提供商"
         b.btnOpenai.text = Store.t("providerOpenai")

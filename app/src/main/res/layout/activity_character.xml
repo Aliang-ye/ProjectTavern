@@ -42,7 +42,67 @@
             android:textColor="@color/on_candle" />
     </LinearLayout>
 
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/surface"
+        android:paddingHorizontal="12dp"
+        android:paddingBottom="8dp"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/tabContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tabBasic"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_chip_on"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="6dp"
+                android:textColor="@color/on_candle"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tabPersona"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_chip"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="6dp"
+                android:textColor="@color/ink"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tabDialogue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_chip"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="6dp"
+                android:textColor="@color/ink"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tabPrompt"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_chip"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="6dp"
+                android:textColor="@color/ink"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
     <ScrollView
+        android:id="@+id/scrollContainer"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1">
@@ -53,107 +113,143 @@
             android:orientation="vertical"
             android:padding="16dp">
 
+            <!-- TAB 1: 基础信息 -->
             <LinearLayout
+                android:id="@+id/panelBasic"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="@drawable/bg_card"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="16dp">
+                android:orientation="vertical">
 
-                <FrameLayout
-                    android:id="@+id/avatarContainer"
-                    android:layout_width="64dp"
-                    android:layout_height="64dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_card"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="16dp">
+
+                    <FrameLayout
+                        android:id="@+id/avatarContainer"
+                        android:layout_width="64dp"
+                        android:layout_height="64dp">
+
+                        <TextView
+                            android:id="@+id/avatar"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:background="@drawable/bg_avatar"
+                            android:fontFamily="serif"
+                            android:gravity="center"
+                            android:textColor="@color/ink"
+                            android:textSize="24sp" />
+
+                        <ImageView
+                            android:id="@+id/avatarImg"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:background="@drawable/bg_avatar"
+                            android:clipToOutline="true"
+                            android:scaleType="centerCrop"
+                            android:visibility="gone" />
+                    </FrameLayout>
 
                     <TextView
-                        android:id="@+id/avatar"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:background="@drawable/bg_avatar"
-                        android:fontFamily="serif"
-                        android:gravity="center"
-                        android:textColor="@color/ink"
-                        android:textSize="24sp" />
-
-                    <ImageView
-                        android:id="@+id/avatarImg"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:background="@drawable/bg_avatar"
-                        android:clipToOutline="true"
-                        android:scaleType="centerCrop"
-                        android:visibility="gone" />
-                </FrameLayout>
+                        android:id="@+id/tapAvatar"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:textColor="@color/muted"
+                        android:textSize="12sp" />
+                </LinearLayout>
 
                 <TextView
-                    android:id="@+id/tapAvatar"
-                    android:layout_width="wrap_content"
+                    android:id="@+id/btnPrivate"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="14dp"
+                    android:background="@drawable/bg_chip_on"
+                    android:gravity="center"
+                    android:textColor="@color/on_candle"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/privateHint"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
+                    android:layout_marginTop="6dp"
                     android:textColor="@color/muted"
                     android:textSize="12sp" />
+
+                <TextView android:id="@+id/lName" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:textColor="@color/muted" android:textSize="12sp" />
+                <EditText android:id="@+id/etName" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:minHeight="44dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="15sp" />
+
+                <TextView android:id="@+id/lTags" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/muted" android:textSize="12sp" />
+                <EditText android:id="@+id/etTags" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:minHeight="44dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
+
+                <TextView android:id="@+id/lDesc" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/muted" android:textSize="12sp" />
+                <EditText android:id="@+id/etDesc" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="88dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
+
+                <TextView android:id="@+id/lWorld" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:textColor="@color/muted" android:textSize="12sp" />
+                <Spinner
+                    android:id="@+id/spWorld"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:background="@drawable/bg_input"
+                    android:padding="8dp" />
+
+                <TextView android:id="@+id/btnExport" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="16dp" android:background="@drawable/bg_card" android:gravity="center" android:textColor="@color/candle" />
+                <TextView android:id="@+id/btnDup" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="8dp" android:background="@drawable/bg_card" android:gravity="center" android:textColor="@color/ink" />
+                <TextView android:id="@+id/btnDelete" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="8dp" android:background="@drawable/bg_card" android:gravity="center" android:textColor="@color/wine" />
             </LinearLayout>
 
-            <TextView
-                android:id="@+id/btnPrivate"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="14dp"
-                android:background="@drawable/bg_chip_on"
-                android:gravity="center"
-                android:textColor="@color/on_candle"
-                android:textSize="15sp" />
-
-            <TextView
-                android:id="@+id/privateHint"
+            <!-- TAB 2: 人设与场景 -->
+            <LinearLayout
+                android:id="@+id/panelPersona"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:textColor="@color/muted"
-                android:textSize="12sp" />
+                android:orientation="vertical"
+                android:visibility="gone">
 
-            <TextView android:id="@+id/lName" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:textColor="@color/muted" android:textSize="12sp" />
-            <EditText android:id="@+id/etName" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:minHeight="44dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="15sp" />
+                <TextView android:id="@+id/lPersonality" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/muted" android:textSize="12sp" />
+                <EditText android:id="@+id/etPersonality" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="110dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
 
-            <TextView android:id="@+id/lTags" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/muted" android:textSize="12sp" />
-            <EditText android:id="@+id/etTags" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:minHeight="44dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
+                <TextView android:id="@+id/lScenario" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:textColor="@color/muted" android:textSize="12sp" />
+                <EditText android:id="@+id/etScenario" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="90dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
 
-            <TextView android:id="@+id/lDesc" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/muted" android:textSize="12sp" />
-            <EditText android:id="@+id/etDesc" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="88dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
+                <TextView android:id="@+id/lNotes" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:textColor="@color/muted" android:textSize="12sp" />
+                <EditText android:id="@+id/etNotes" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="90dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
+            </LinearLayout>
 
-            <TextView android:id="@+id/lPersonality" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/muted" android:textSize="12sp" />
-            <EditText android:id="@+id/etPersonality" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="88dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
-
-            <TextView android:id="@+id/lScenario" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/muted" android:textSize="12sp" />
-            <EditText android:id="@+id/etScenario" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="72dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
-
-            <TextView android:id="@+id/lFirst" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/muted" android:textSize="12sp" />
-            <EditText android:id="@+id/etFirst" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="100dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
-
-            <TextView android:id="@+id/lAlt" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/muted" android:textSize="12sp" />
-            <EditText android:id="@+id/etAlt" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="72dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
-
-            <TextView android:id="@+id/lExamples" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/muted" android:textSize="12sp" />
-            <EditText android:id="@+id/etExamples" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="88dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
-
-            <TextView android:id="@+id/lSystem" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/muted" android:textSize="12sp" />
-            <EditText android:id="@+id/etSystem" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="72dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
-
-            <TextView android:id="@+id/lNotes" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/muted" android:textSize="12sp" />
-            <EditText android:id="@+id/etNotes" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="64dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
-
-            <TextView android:id="@+id/lWorld" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/muted" android:textSize="12sp" />
-            <Spinner
-                android:id="@+id/spWorld"
+            <!-- TAB 3: 开场与台词 -->
+            <LinearLayout
+                android:id="@+id/panelDialogue"
                 android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:background="@drawable/bg_input"
-                android:padding="8dp" />
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
 
-            <TextView android:id="@+id/btnExport" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="16dp" android:background="@drawable/bg_card" android:gravity="center" android:textColor="@color/candle" />
-            <TextView android:id="@+id/btnDup" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="8dp" android:background="@drawable/bg_card" android:gravity="center" android:textColor="@color/ink" />
-            <TextView android:id="@+id/btnDelete" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="8dp" android:background="@drawable/bg_card" android:gravity="center" android:textColor="@color/wine" />
+                <TextView android:id="@+id/lFirst" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/muted" android:textSize="12sp" />
+                <EditText android:id="@+id/etFirst" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="120dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
+
+                <TextView android:id="@+id/lAlt" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:textColor="@color/muted" android:textSize="12sp" />
+                <EditText android:id="@+id/etAlt" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="90dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
+
+                <TextView android:id="@+id/lExamples" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:textColor="@color/muted" android:textSize="12sp" />
+                <EditText android:id="@+id/etExamples" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="120dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
+            </LinearLayout>
+
+            <!-- TAB 4: 提示词 -->
+            <LinearLayout
+                android:id="@+id/panelPrompt"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView android:id="@+id/lSystem" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/muted" android:textSize="12sp" />
+                <EditText android:id="@+id/etSystem" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_input" android:gravity="top" android:inputType="textMultiLine" android:minHeight="180dp" android:padding="12dp" android:textColor="@color/ink" android:textSize="14sp" />
+            </LinearLayout>
+
         </LinearLayout>
     </ScrollView>
 </LinearLayout>

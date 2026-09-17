@@ -219,10 +219,14 @@ class MainActivity : AppCompatActivity() {
     private fun refreshWorlds() {
         fill(b.panelWorlds.list) {
             Store.state.worldBooks.forEach { w ->
+                val gm = Store.ensureWorldGm(w.id, w.name)
                 val n = Store.state.entries.count { e -> e.worldBookId == w.id }
-                val filled = listOf(w.description, w.geography, w.history, w.institutions, w.culture, w.personalNotes).count { s -> s.isNotBlank() }
-                val row = inflateRow(it, w.name, w.description.ifBlank { "$n ${Store.t("entries")}" }, "$filled/6") {
+                val row = inflateRow(it, w.name, w.description.ifBlank { "$n ${Store.t("entries")}" }, Store.t("chatWithGm")) {
                     openScreen(WorldActivity::class.java) { it.putExtra("id", w.id) }
+                }
+                row.findViewById<TextView>(R.id.meta).setOnClickListener { _ ->
+                    val convId = Store.startConversation(gm.id, null) ?: return@setOnClickListener
+                    openScreen(ChatActivity::class.java) { it.putExtra("id", convId) }
                 }
                 row.setOnLongClickListener {
                     confirm(this@MainActivity, Store.t("deleteQ")) {

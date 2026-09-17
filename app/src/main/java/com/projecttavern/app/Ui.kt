@@ -10,6 +10,7 @@ import android.net.Uri
 import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -126,4 +127,24 @@ fun actionLabel(ctx: Context, text: String, color: Int, onClick: () -> Unit): Te
     t.setOnClickListener { onClick() }
     t.setTypeface(Typeface.DEFAULT)
     return t
+}
+
+fun Activity.hideKeyboard() {
+    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+    val v = currentFocus ?: View(this)
+    imm?.hideSoftInputFromWindow(v.windowToken, 0)
+}
+
+fun setupTouchToHideKeyboard(view: View, activity: Activity) {
+    if (view !is EditText) {
+        view.setOnTouchListener { _, _ ->
+            activity.hideKeyboard()
+            false
+        }
+    }
+    if (view is android.view.ViewGroup) {
+        for (i in 0 until view.childCount) {
+            setupTouchToHideKeyboard(view.getChildAt(i), activity)
+        }
+    }
 }

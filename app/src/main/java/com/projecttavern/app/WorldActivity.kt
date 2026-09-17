@@ -38,8 +38,39 @@ class WorldActivity : AppCompatActivity() {
                 finish()
             }
         }
+        b.tabLore.setOnClickListener { switchTab(0) }
+        b.tabGm.setOnClickListener { switchTab(1) }
+        b.tabEntries.setOnClickListener { switchTab(2) }
+        setupTouchToHideKeyboard(b.root, this)
         b.etSection.addTextChangedListener(SimpleWatcher { writeSection() })
+        b.etName.addTextChangedListener(SimpleWatcher {
+            val name = b.etName.text.toString().trim()
+            if (name.isNotEmpty()) {
+                b.headerTitle.text = name
+                b.gmTitle.text = "$name · GM"
+            }
+        })
         bind()
+    }
+
+    private var activeTab = 0
+
+    private fun switchTab(tab: Int) {
+        activeTab = tab
+        hideKeyboard()
+        b.panelLore.visibility = if (tab == 0) android.view.View.VISIBLE else android.view.View.GONE
+        b.panelGm.visibility = if (tab == 1) android.view.View.VISIBLE else android.view.View.GONE
+        b.panelEntries.visibility = if (tab == 2) android.view.View.VISIBLE else android.view.View.GONE
+
+        fun styleTab(tv: android.widget.TextView, on: Boolean) {
+            tv.setBackgroundResource(if (on) R.drawable.bg_chip_on else R.drawable.bg_chip)
+            tv.setTextColor(androidx.core.content.ContextCompat.getColor(this, if (on) R.color.on_candle else R.color.ink))
+        }
+
+        styleTab(b.tabLore, tab == 0)
+        styleTab(b.tabGm, tab == 1)
+        styleTab(b.tabEntries, tab == 2)
+        b.scrollContainer.smoothScrollTo(0, 0)
     }
 
     private fun current() = Store.state.worldBooks.find { it.id == id }
@@ -49,6 +80,9 @@ class WorldActivity : AppCompatActivity() {
         b.headerTitle.text = w.name
         b.btnSave.text = Store.t("save")
         b.btnTest.text = Store.t("entryTest")
+        b.tabLore.text = Store.t("tabLore")
+        b.tabGm.text = Store.t("tabGm")
+        b.tabEntries.text = Store.t("tabEntries")
         b.lName.text = Store.t("name")
         b.etName.setText(w.name)
         b.sectionsHint.text = Store.t("sectionsHint")
@@ -60,6 +94,17 @@ class WorldActivity : AppCompatActivity() {
         renderAvatar(b.gmAvatar, b.gmAvatarImg, gm.name, gm.avatar)
         b.gmCard.setOnClickListener { openScreen(CharacterActivity::class.java) { it.putExtra("id", gm.id) } }
         b.btnEditGm.setOnClickListener { openScreen(CharacterActivity::class.java) { it.putExtra("id", gm.id) } }
+
+        b.btnChatGm.text = Store.t("chatWithGm")
+        b.btnChatGm.setOnClickListener {
+            save()
+            val convId = Store.startConversation(gm.id, null) ?: return@setOnClickListener
+            openScreen(ChatActivity::class.java) { it.putExtra("id", convId) }
+        }
+        b.lGmFirstMsg.text = Store.t("firstMessage")
+        b.tvGmFirstMsg.text = gm.firstMessage
+        b.lGmPrompt.text = Store.t("systemPrompt")
+        b.tvGmPrompt.text = gm.systemPrompt
 
         b.lEntries.text = "${Store.t("entries")} ${Store.state.entries.count { it.worldBookId == id }}"
         b.btnAddEntry.text = "+ ${Store.t("addEntry")}"
