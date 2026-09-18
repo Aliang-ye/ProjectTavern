@@ -36,7 +36,9 @@ class StoryActivity : AppCompatActivity() {
                 finish()
                 return
             }
-            draftStory = existing
+            draftStory = existing.copy(
+                worldBookIds = existing.worldBookIds.toMutableList(),
+            )
         }
 
         b = ActivityStoryBinding.inflate(layoutInflater)

@@ -1,6 +1,8 @@
 package com.projecttavern.app
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -22,6 +24,14 @@ class ChatActivity : AppCompatActivity() {
     private var busy = false
     private var debugOn = false
 
+    // 流式输出节流：最多每 60ms 刷新一次 UI，避免高速模型打满主线程
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private var throttlePending = false
+    private var streamTarget: ChatMessage? = null
+
+    // 智能自动滚动：记录用户是否在底部
+    private var userAtBottom = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         convId = intent.getStringExtra("id") ?: return finish()
@@ -35,7 +45,8 @@ class ChatActivity : AppCompatActivity() {
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                 val lastPos = layoutManager.findLastVisibleItemPosition()
                 val total = adapter.itemCount
-                if (total > 0 && lastPos < total - 2) {
+                userAtBottom = total == 0 || lastPos >= total - 2
+                if (!userAtBottom) {
                     b.btnScrollBottom.visibility = View.VISIBLE
                 } else {
                     b.btnScrollBottom.visibility = View.GONE
@@ -174,6 +185,8 @@ class ChatActivity : AppCompatActivity() {
             return
         }
         busy = true
+        streamTarget = asst
+        throttlePending = false
         paintSend()
         b.err.visibility = View.GONE
         thread {
@@ -181,18 +194,23 @@ class ChatActivity : AppCompatActivity() {
                 val built = Engine.build(convId, fallbackTipId ?: asst.parentId)
                 val full = Llm.stream(profile, built.messages, preset) { piece ->
                     if (!Store.state.streaming) return@stream
-                    runOnUiThread {
-                        if (isFinishing || isDestroyed) return@runOnUiThread
-                        val g = asst.generations[asst.generationIndex]
-                        g.content += piece
-                        asst.content = g.content
-                        val lastIdx = adapter.items.lastIndex
-                        if (lastIdx >= 0) {
-                            adapter.notifyItemChanged(lastIdx, Unit)
-                            b.messages.scrollToPosition(lastIdx)
-                        } else {
-                            refresh()
-                        }
+                    // 将 token 写入内存，但不立即刷新 UI
+                    val g = asst.generations.getOrNull(asst.generationIndex) ?: return@stream
+                    g.content += piece
+                    asst.content = g.content
+                    // 节流：60ms 内只派发一次 UI 刷新
+                    if (!throttlePending) {
+                        throttlePending = true
+                        uiHandler.postDelayed({
+                            throttlePending = false
+                            if (isFinishing || isDestroyed) return@postDelayed
+                            val lastIdx = adapter.items.lastIndex
+                            if (lastIdx >= 0) {
+                                adapter.notifyItemChanged(lastIdx, Unit)
+                                // 只有当用户本身在底部时才自动滚动，不干扰用户翻历史
+                                if (userAtBottom) b.messages.scrollToPosition(lastIdx)
+                            }
+                        }, 60)
                     }
                 }
                 runOnUiThread {
@@ -202,12 +220,17 @@ class ChatActivity : AppCompatActivity() {
                     asst.content = g.content
                     Store.persist()
                     busy = false
+                    streamTarget = null
                     paintSend()
                     refresh()
+                    if (userAtBottom && adapter.itemCount > 0) {
+                        b.messages.scrollToPosition(adapter.itemCount - 1)
+                    }
                 }
             } catch (e: Exception) {
                 runOnUiThread {
                     busy = false
+                    streamTarget = null
                     paintSend()
                     b.err.visibility = View.VISIBLE
                     b.err.text = "${Store.t("error")}: ${e.message ?: "error"}"
@@ -331,7 +354,7 @@ class ChatActivity : AppCompatActivity() {
                     } else {
                         m.content = newText
                     }
-                    m.createdAt = Store.now()
+                    // 不修改 createdAt，保留原始时间戳，避免打乱消息顺序
                     Store.persist()
                     refresh()
                 }
@@ -370,6 +393,7 @@ class ChatActivity : AppCompatActivity() {
             val actions = h.v.findViewById<LinearLayout>(R.id.actions)
             actions.removeAllViews()
             if (m.role == "assistant") {
+                actions.gravity = android.view.Gravity.START
                 user.setOnLongClickListener(null)
                 nameRow.visibility = View.VISIBLE
                 val avatarTv = h.v.findViewById<TextView>(R.id.avatar)
@@ -408,10 +432,28 @@ class ChatActivity : AppCompatActivity() {
                     }
                 })
             } else {
+                actions.gravity = android.view.Gravity.END
                 nameRow.visibility = View.GONE
                 body.visibility = View.GONE
                 user.visibility = View.VISIBLE
                 user.text = m.content
+                val muted = getColor(R.color.muted)
+                val wine = getColor(R.color.wine)
+                actions.addView(actionLabel(this@ChatActivity, Store.t("edit"), muted) { showEditMessageDialog(m) })
+                actions.addView(actionLabel(this@ChatActivity, Store.t("copy"), muted) {
+                    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("t", m.content))
+                    Toast.makeText(this@ChatActivity, Store.t("copied"), Toast.LENGTH_SHORT).show()
+                })
+                actions.addView(actionLabel(this@ChatActivity, Store.t("delete"), wine) {
+                    confirm(this@ChatActivity, Store.t("deleteQ")) {
+                        Store.state.messages.filter { it.parentId == m.id }.forEach { it.parentId = m.parentId }
+                        Store.state.messages.removeAll { it.id == m.id }
+                        if (conv()?.tipMessageId == m.id) conv()?.tipMessageId = m.parentId
+                        Store.persist()
+                        refresh()
+                    }
+                })
                 user.setOnLongClickListener {
                     val opts = arrayOf(Store.t("edit"), Store.t("copy"), Store.t("delete"))
                     androidx.appcompat.app.AlertDialog.Builder(this@ChatActivity)

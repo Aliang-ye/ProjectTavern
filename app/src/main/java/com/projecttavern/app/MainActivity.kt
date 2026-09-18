@@ -26,9 +26,19 @@ class MainActivity : AppCompatActivity() {
             try {
                 val json = contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: return@registerForActivityResult
                 val next = gson.fromJson(json, TavernState::class.java)
-                if (next != null) Store.replace(next)
-                refresh()
-                Toast.makeText(this, if (Store.state.locale == "en") "Backup restored" else "备份已恢复", Toast.LENGTH_SHORT).show()
+                if (next != null) {
+                    val prompt = if (Store.state.locale == "en") {
+                        "Restoring this backup will replace current characters, worlds, and chat history. Continue?"
+                    } else {
+                        "恢复此备份将覆盖当前的所有角色、世界与聊天记录。是否继续？"
+                    }
+                    val positive = if (Store.state.locale == "en") "Restore" else "恢复"
+                    confirm(this, prompt, positive) {
+                        Store.replace(next)
+                        refresh()
+                        Toast.makeText(this, if (Store.state.locale == "en") "Backup restored" else "备份已恢复", Toast.LENGTH_SHORT).show()
+                    }
+                }
             } catch (e: Exception) {
                 Toast.makeText(this, if (Store.state.locale == "en") "Import failed: ${e.message ?: "invalid JSON"}" else "导入失败：${e.message ?: "JSON 格式不正确"}", Toast.LENGTH_LONG).show()
             }

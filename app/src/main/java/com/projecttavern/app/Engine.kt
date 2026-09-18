@@ -53,11 +53,15 @@ object Engine {
         // [Community Edition] Sliding window context trimming. Neural memory summarization is bundled in release APK.
         if (preset == null || preset.contextLimit <= 0) return history
         val maxChars = preset.contextLimit.coerceAtLeast(4096)
-        val kept = history.toMutableList()
-        while (kept.size > 4) {
-            val text = kept.joinToString("\n") { if (it.role == "assistant") display(it) else it.content }
-            if (text.length <= maxChars) break
-            kept.removeFirst()
+        if (history.size <= 4) return history
+        // O(N)：从尾部往前累计字符长度，而非每次都 joinToString 整个列表
+        var total = 0
+        val kept = ArrayDeque<ChatMessage>()
+        for (m in history.asReversed()) {
+            val len = (if (m.role == "assistant") display(m) else m.content).length + 1
+            if (total + len > maxChars && kept.size >= 4) break
+            kept.addFirst(m)
+            total += len
         }
         return kept
     }
@@ -82,7 +86,12 @@ object Engine {
             ?: s.personas.firstOrNull()
         val userName = persona?.name?.ifBlank { null } ?: s.userName.ifBlank { if (s.locale == "en") "You" else "你" }
         val userPersona = persona?.description?.ifBlank { null } ?: s.userPersona
-        fun fill(t: String) = t.replace("{{user}}", userName)
+        // 角色名称（用于 {{char}} 宏）
+        val charName = ch?.name ?: if (worlds.isNotEmpty()) {
+            val w0 = worlds.first()
+            w0.willName.ifBlank { if (s.locale == "en") "World Will" else "世界意志" }
+        } else ""
+        fun fill(t: String) = t.replace("{{user}}", userName).replace("{{char}}", charName)
 
         val sys = StringBuilder()
         sys.append("## LANGUAGE\n").append(lock).append("\n\n")

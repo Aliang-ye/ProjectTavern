@@ -21,6 +21,11 @@ object Store {
             try {
                 gson.fromJson(raw, TavernState::class.java) ?: seed()
             } catch (_: Exception) {
+                // 解析失败时备份损坏文件，而非直接清空用户数据
+                try {
+                    val bak = File(ctx.filesDir, "tavern.json.bak.${System.currentTimeMillis()}")
+                    file.copyTo(bak, overwrite = true)
+                } catch (_: Exception) {}
                 seed()
             }
         } else seed()
@@ -53,12 +58,16 @@ object Store {
     private val ioExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     fun persist() {
-        val json = gson.toJson(state)
+        // 序列化和写盘全部在后台线程完成，避免 UI 线程阻塞
+        val snapshot = state
         ioExecutor.execute {
             try {
-                file.writeText(json)
-            } catch (_: Exception) {
-            }
+                val json = gson.toJson(snapshot)
+                // 原子写入：先写临时文件，再 rename，防止写到一半崩溃产生损坏文件
+                val tmp = File(file.parent, "${file.name}.tmp")
+                tmp.writeText(json)
+                tmp.renameTo(file)
+            } catch (_: Exception) {}
         }
         listeners.forEach { it() }
     }

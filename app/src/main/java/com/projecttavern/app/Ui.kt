@@ -36,7 +36,14 @@ fun renderAvatar(tv: TextView, img: ImageView?, name: String, avatarPath: String
         val file = File(avatarPath)
         if (file.exists()) {
             try {
-                val bmp = BitmapFactory.decodeFile(avatarPath)
+                // 先读取图片尺寸，计算合适的 inSampleSize，避免大图 OOM
+                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(avatarPath, opts)
+                val maxSide = 256
+                var sample = 1
+                while ((opts.outWidth / sample) > maxSide || (opts.outHeight / sample) > maxSide) sample *= 2
+                val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sample }
+                val bmp = BitmapFactory.decodeFile(avatarPath, decodeOpts)
                 if (bmp != null) {
                     avatarCache.put(avatarPath, bmp)
                     img?.setImageBitmap(bmp)
@@ -208,10 +215,10 @@ fun chip(ctx: Context, text: String, on: Boolean, onClick: () -> Unit): TextView
     return t
 }
 
-fun confirm(ctx: Context, msg: String, onYes: () -> Unit) {
+fun confirm(ctx: Context, msg: String, positiveLabel: String = Store.t("delete"), onYes: () -> Unit) {
     AlertDialog.Builder(ctx)
         .setMessage(msg)
-        .setPositiveButton(Store.t("delete")) { _, _ -> onYes() }
+        .setPositiveButton(positiveLabel) { _, _ -> onYes() }
         .setNegativeButton(Store.t("cancel"), null)
         .show()
 }

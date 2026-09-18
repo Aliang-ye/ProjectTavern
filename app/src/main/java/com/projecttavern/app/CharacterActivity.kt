@@ -47,7 +47,10 @@ class CharacterActivity : AppCompatActivity() {
                 finish()
                 return
             }
-            draftCharacter = existing
+            draftCharacter = existing.copy(
+                tags = existing.tags.toMutableList(),
+                alternateGreetings = existing.alternateGreetings.toMutableList(),
+            )
         }
 
         b = ActivityCharacterBinding.inflate(layoutInflater)

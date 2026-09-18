@@ -55,7 +55,7 @@ class WorldActivity : AppCompatActivity() {
                 finish()
                 return
             }
-            draftWorld = existing
+            draftWorld = existing.copy()
         }
 
         b = ActivityWorldBinding.inflate(layoutInflater)

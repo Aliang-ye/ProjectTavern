@@ -15,6 +15,7 @@ class PresetActivity : AppCompatActivity() {
     private lateinit var pageTitle: TextView
     private lateinit var pageHint: TextView
     private lateinit var btnAddPreset: TextView
+    private val saveActions = mutableListOf<() -> Unit>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,7 +53,13 @@ class PresetActivity : AppCompatActivity() {
         renderPresets()
     }
 
+    override fun onPause() {
+        super.onPause()
+        saveActions.forEach { it() }
+    }
+
     private fun renderPresets() {
+        saveActions.clear()
         presetList.removeAllViews()
         val presets = Store.localePresets().ifEmpty { Store.state.presets }
         presets.forEach { p ->
@@ -84,24 +91,30 @@ class PresetActivity : AppCompatActivity() {
         etPrompt.setText(p.systemPrompt)
 
         fun save() {
-            p.name = etName.text.toString()
-            p.temperature = etTemp.text.toString().toDoubleOrNull() ?: p.temperature
-            p.topP = etTopP.text.toString().toDoubleOrNull() ?: p.topP
-            p.maxTokens = etMax.text.toString().toIntOrNull() ?: p.maxTokens
-            p.contextLimit = etContext.text.toString().toIntOrNull() ?: p.contextLimit
-            p.responseBudget = etBudget.text.toString().toIntOrNull() ?: p.responseBudget
+            p.name = etName.text.toString().trim().ifBlank { p.name }
+            val rawTemp = etTemp.text.toString().toDoubleOrNull() ?: p.temperature
+            p.temperature = rawTemp.coerceIn(0.0, 2.0)
+            val rawTopP = etTopP.text.toString().toDoubleOrNull() ?: p.topP
+            p.topP = rawTopP.coerceIn(0.0, 1.0)
+            p.maxTokens = (etMax.text.toString().toIntOrNull() ?: p.maxTokens).coerceIn(1, 16384)
+            p.contextLimit = (etContext.text.toString().toIntOrNull() ?: p.contextLimit).coerceAtLeast(512)
+            p.responseBudget = (etBudget.text.toString().toIntOrNull() ?: p.responseBudget).coerceIn(1, 16384)
             p.systemPrompt = etPrompt.text.toString()
             Store.persist()
         }
 
-        val w = SimpleWatcher { save() }
-        etName.addTextChangedListener(w)
-        etTemp.addTextChangedListener(w)
-        etTopP.addTextChangedListener(w)
-        etMax.addTextChangedListener(w)
-        etContext.addTextChangedListener(w)
-        etBudget.addTextChangedListener(w)
-        etPrompt.addTextChangedListener(w)
+        val focusListener = android.view.View.OnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) save()
+        }
+        etName.onFocusChangeListener = focusListener
+        etTemp.onFocusChangeListener = focusListener
+        etTopP.onFocusChangeListener = focusListener
+        etMax.onFocusChangeListener = focusListener
+        etContext.onFocusChangeListener = focusListener
+        etBudget.onFocusChangeListener = focusListener
+        etPrompt.onFocusChangeListener = focusListener
+
+        saveActions.add(::save)
 
         btnDelete.setOnClickListener {
             if (totalCount <= 1) {

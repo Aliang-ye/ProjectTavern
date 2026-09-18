@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit
 
 object Llm {
     private val client = OkHttpClient.Builder()
-        .readTimeout(0, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)  // 90s 兜底，避免断网时请求永远挂起
         .connectTimeout(30, TimeUnit.SECONDS)
         .build()
     @Volatile var currentCall: okhttp3.Call? = null
@@ -213,6 +213,7 @@ object Llm {
 
         try {
             val source = responseBody.source()
+            val reasoning = StringBuilder()
             while (!source.exhausted()) {
                 val rawLine = source.readUtf8Line() ?: break
                 val s = rawLine.trim()
@@ -231,13 +232,21 @@ object Llm {
                         full.append(piece)
                         onDelta(piece)
                     }
+                    // DeepSeek-R1 等思维链模型：捕获 reasoning_content 作为 fallback
+                    val choice0 = json.optJSONArray("choices")?.optJSONObject(0)
+                    val reasonPiece = choice0?.optJSONObject("delta")?.optString("reasoning_content").orEmpty()
+                    if (reasonPiece.isNotEmpty()) reasoning.append(reasonPiece)
                 } catch (e: Exception) {
-                    if (e is RuntimeException && e.message != null && !e.message!!.startsWith("Malformed model stream")) {
-                        throw e
-                    }
-                    val preview = data.take(180)
-                    throw RuntimeException("Malformed model stream payload: $preview", e)
+                    if (e is RuntimeException && e.message != null && !e.message!!.startsWith("Malformed")) throw e
+                    // 格式错误的 SSE 行：静默跳过，不中断整个流
+                    continue
                 }
+            }
+            // 若正文为空但有思维链内容（DeepSeek-R1），将思维链作为输出
+            if (full.isEmpty() && reasoning.isNotEmpty()) {
+                val reasonText = reasoning.toString()
+                full.append(reasonText)
+                onDelta(reasonText)
             }
         } finally {
             res.close()
