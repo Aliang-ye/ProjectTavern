@@ -35,9 +35,11 @@ App **不提供推理、不做 API 中转、没有账号、没有云同步**。K
    - **异步后台持久化**：`Store.persist()` 移入后台独立单线程队列执行，杜绝大 JSON 写入造成的 UI 线程卡顿；
    - **搜索输入 150ms 防抖**：输入搜索词时避免逐字全量重算全屏布局，体验顺滑如丝。
 
-Android APK 发布页：
+Android APK 发布与下载：
 
-- Release: https://github.com/Aliang-ye/ProjectTavern/releases
+- **最新版本 Release**：[Project Tavern v1.4.0](https://github.com/Aliang-ye/ProjectTavern/releases/tag/v1.4.0)
+- **最新安装包直接下载**：[ProjectTavern-v1.4.0.apk](https://github.com/Aliang-ye/ProjectTavern/releases/download/v1.4.0/ProjectTavern-v1.4.0.apk)
+- **所有历史版本**：https://github.com/Aliang-ye/ProjectTavern/releases
 
 ## 能做什么
 
