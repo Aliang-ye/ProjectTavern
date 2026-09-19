@@ -83,6 +83,12 @@ class MainActivity : AppCompatActivity() {
         }
         b.panelChats.fab.visibility = View.GONE
 
+        // 顶部统计胶囊点击直接切换至对应面板
+        b.statCharacters.setOnClickListener { b.bottomNav.selectedItemId = R.id.nav_characters }
+        b.statWorlds.setOnClickListener { b.bottomNav.selectedItemId = R.id.nav_worlds }
+        b.statStories.setOnClickListener { b.bottomNav.selectedItemId = R.id.nav_stories }
+        b.statChats.setOnClickListener { b.bottomNav.selectedItemId = R.id.nav_chats }
+
         val searchHandler = android.os.Handler(android.os.Looper.getMainLooper())
         var searchRunnable: Runnable? = null
         b.panelCharacters.search.addTextChangedListener(SimpleWatcher {
@@ -128,10 +134,14 @@ class MainActivity : AppCompatActivity() {
         b.bottomNav.menu.findItem(R.id.nav_stories).title = Store.t("navStories")
         b.bottomNav.menu.findItem(R.id.nav_chats).title = Store.t("navChats")
         b.bottomNav.menu.findItem(R.id.nav_settings).title = Store.t("navSettings")
-        b.statCharacters.text = "${Store.state.characters.size}"
-        b.statWorlds.text = "${Store.state.worldBooks.size}"
-        b.statStories.text = "${Store.state.stories.size}"
-        b.statChats.text = "${Store.state.conversations.size}"
+        val charLabel = if (loc == "en") "Chars" else "角色"
+        val worldLabel = if (loc == "en") "Worlds" else "世界"
+        val storyLabel = if (loc == "en") "Stories" else "故事"
+        val chatLabel = if (loc == "en") "Chats" else "对话"
+        b.statCharacters.text = "${Store.state.characters.size} $charLabel"
+        b.statWorlds.text = "${Store.state.worldBooks.size} $worldLabel"
+        b.statStories.text = "${Store.state.stories.size} $storyLabel"
+        b.statChats.text = "${Store.state.conversations.size} $chatLabel"
         val active = Store.activeProfile()
         val ready = active != null && active.apiKey.isNotBlank()
         b.statusBanner.text = if (loc == "en") {

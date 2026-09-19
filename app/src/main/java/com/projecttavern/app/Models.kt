@@ -138,6 +138,7 @@ data class Conversation(
     var personaId: String? = null,
     var title: String = "",
     var tipMessageId: String? = null,
+    var draftText: String = "",
     var isPinned: Boolean = false,
     var createdAt: Long = 0,
     var updatedAt: Long = 0,

@@ -3,6 +3,7 @@ package com.projecttavern.app
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import androidx.activity.result.contract.ActivityResultContracts
@@ -239,7 +240,9 @@ class WorldActivity : AppCompatActivity() {
         b.entryList.removeAllViews()
         val entries = if (isNew) draftEntries else Store.state.entries.filter { it.worldBookId == id }
         entries.sortedByDescending { it.priority }.forEach { e ->
-            inflateRow(b.entryList, e.name, e.keys.joinToString(", ").ifBlank { "—" }, "p${e.priority}") {
+            val meta = if (e.constant) "★ ${Store.t("constant")}" else "p${e.priority}"
+            val sub = if (e.constant) "${Store.t("constantHint")} · ${e.content.take(30)}" else e.keys.joinToString(", ").ifBlank { "—" }
+            inflateRow(b.entryList, e.name, sub, meta) {
                 editEntry(e)
             }
         }
@@ -262,13 +265,21 @@ class WorldActivity : AppCompatActivity() {
         }
         val name = field(Store.t("name"), e.name)
         val keysEt = field(Store.t("tags"), e.keys.joinToString(","))
+        val cbConstant = CheckBox(this).apply {
+            text = Store.t("constantEntry")
+            isChecked = e.constant
+            setTextColor(getColor(R.color.ink))
+            setPadding(dp(4), dp(6), dp(4), dp(6))
+        }
+        box.addView(cbConstant)
         val content = field(Store.t("description"), e.content, true)
         AlertDialog.Builder(this)
             .setTitle(Store.t("addEntry"))
             .setView(box)
             .setPositiveButton(Store.t("save")) { _, _ ->
                 e.name = name.text.toString()
-                e.keys = keysEt.text.toString().split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                e.keys = keysEt.text.toString().split(Regex("[,，;；\\s]+")).map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                e.constant = cbConstant.isChecked
                 e.content = content.text.toString()
                 if (isNew) {
                     if (draftEntries.none { it.id == e.id }) draftEntries.add(e)

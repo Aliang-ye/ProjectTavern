@@ -165,6 +165,7 @@ fun inflateSwipeRow(
     subtitleView.text = subtitle
     pinBadge.visibility = if (isPinned) View.VISIBLE else View.GONE
     btnPin.text = if (isPinned) Store.t("unpin") else Store.t("pin")
+    btnDelete.text = Store.t("delete")
 
     if (meta.isBlank()) {
         metaView.visibility = View.GONE

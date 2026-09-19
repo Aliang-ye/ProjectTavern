@@ -49,6 +49,23 @@ object Engine {
         return g?.content ?: m.content
     }
 
+    fun fillMacros(text: String, userName: String, charName: String): String {
+        return text.replace("{{user}}", userName).replace("{{char}}", charName)
+    }
+
+    fun formatRpText(raw: String): CharSequence {
+        if (!raw.contains("*")) return raw
+        return try {
+            val escaped = raw.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            val formatted = escaped.replace(Regex("\\*([^*\\n]+)\\*")) { matchResult ->
+                "<i>${matchResult.groupValues[1]}</i>"
+            }.replace("\n", "<br/>")
+            android.text.Html.fromHtml(formatted, android.text.Html.FROM_HTML_MODE_COMPACT)
+        } catch (_: Exception) {
+            raw
+        }
+    }
+
     private fun trimHistoryForContext(history: List<ChatMessage>, preset: Preset?): List<ChatMessage> {
         // [Community Edition] Sliding window context trimming. Neural memory summarization is bundled in release APK.
         if (preset == null || preset.contextLimit <= 0) return history
@@ -91,7 +108,7 @@ object Engine {
             val w0 = worlds.first()
             w0.willName.ifBlank { if (s.locale == "en") "World Will" else "世界意志" }
         } else ""
-        fun fill(t: String) = t.replace("{{user}}", userName).replace("{{char}}", charName)
+        fun fill(t: String) = fillMacros(t, userName, charName)
 
         val sys = StringBuilder()
         sys.append("## LANGUAGE\n").append(lock).append("\n\n")

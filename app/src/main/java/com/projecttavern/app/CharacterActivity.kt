@@ -190,7 +190,7 @@ class CharacterActivity : AppCompatActivity() {
     private fun save(commitToStore: Boolean = false) {
         val c = current()
         c.name = b.etName.text.toString().ifBlank { Store.t("newCharacter") }
-        c.tags = b.etTags.text.toString().split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+        c.tags = b.etTags.text.toString().split(Regex("[,，;；\\s]+")).map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
         c.description = b.etDesc.text.toString()
         c.personality = b.etPersonality.text.toString()
         c.scenario = b.etScenario.text.toString()

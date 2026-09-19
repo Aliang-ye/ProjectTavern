@@ -157,9 +157,12 @@ object Store {
             createdAt = now(),
             updatedAt = now(),
         )
-        val greeting = w.willFirstMessage.ifBlank {
+        val persona = state.personas.find { it.id == conv.personaId } ?: state.personas.firstOrNull()
+        val userName = persona?.name?.ifBlank { null } ?: state.userName.ifBlank { if (state.locale == "en") "You" else "你" }
+        val rawGreeting = w.willFirstMessage.ifBlank {
             if (state.locale == "en") "Welcome to ${w.name}." else "「欢迎来到【${w.name}】。世界的心跳在此刻与你共鸣，你想从何处开启你的故事？」"
         }
+        val greeting = Engine.fillMacros(rawGreeting, userName, willName)
         val greet = ChatMessage(
             id = nid(),
             conversationId = conv.id,
@@ -200,7 +203,10 @@ object Store {
                     createdAt = now(),
                     updatedAt = now(),
                 )
-                val greeting = world?.willFirstMessage?.ifBlank { null } ?: if (state.locale == "en") "The story begins in ${world?.name ?: "this world"}." else "「故事在【${world?.name ?: "这个世界"}】拉开帷幕。你打算迈向何方？」"
+                val persona = state.personas.find { it.id == conv.personaId } ?: state.personas.firstOrNull()
+                val userName = persona?.name?.ifBlank { null } ?: state.userName.ifBlank { if (state.locale == "en") "You" else "你" }
+                val rawGreeting = world?.willFirstMessage?.ifBlank { null } ?: if (state.locale == "en") "The story begins in ${world?.name ?: "this world"}." else "「故事在【${world?.name ?: "这个世界"}】拉开帷幕。你打算迈向何方？」"
+                val greeting = Engine.fillMacros(rawGreeting, userName, willName)
                 val greet = ChatMessage(
                     id = nid(),
                     conversationId = conv.id,
@@ -236,14 +242,23 @@ object Store {
             createdAt = now(),
             updatedAt = now(),
         )
-        val greeting = ch.firstMessage.ifBlank { if (state.locale == "en") "Hello." else "你好。" }
+        val persona = state.personas.find { it.id == conv.personaId } ?: state.personas.firstOrNull()
+        val userName = persona?.name?.ifBlank { null } ?: state.userName.ifBlank { if (state.locale == "en") "You" else "你" }
+        // 支持首开场白与全部备用开场白，且自动替换 {{user}} 与 {{char}} 宏
+        val allGreetings = (listOf(ch.firstMessage).filter { it.isNotBlank() } + ch.alternateGreetings.filter { it.isNotBlank() })
+        val greetingStrings = if (allGreetings.isEmpty()) listOf(if (state.locale == "en") "Hello." else "你好。") else allGreetings
+        val generations = greetingStrings.map { gText ->
+            val filled = Engine.fillMacros(gText, userName, ch.name)
+            Generation(nid(), filled, "greeting", "local", now())
+        }.toMutableList()
+        val firstContent = generations[0].content
         val greet = ChatMessage(
             id = nid(),
             conversationId = conv.id,
             parentId = null,
             role = "assistant",
-            content = greeting,
-            generations = mutableListOf(Generation(nid(), greeting, "greeting", "local", now())),
+            content = firstContent,
+            generations = generations,
             generationIndex = 0,
             createdAt = now(),
         )
