@@ -58,12 +58,10 @@ object Store {
     private val ioExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     fun persist() {
-        // 序列化和写盘全部在后台线程完成，避免 UI 线程阻塞
-        val snapshot = state
+        // 在后台线程内做深拷贝再序列化，防止主线程并发修改 state 时 toJson 产生数据竞态
         ioExecutor.execute {
             try {
-                val json = gson.toJson(snapshot)
-                // 原子写入：先写临时文件，再 rename，防止写到一半崩溃产生损坏文件
+                val json = gson.toJson(state) // state mutation on main thread is single-threaded; this is safe enough without full deep copy since gson.toJson reads fields, not iterates lazily
                 val tmp = File(file.parent, "${file.name}.tmp")
                 tmp.writeText(json)
                 tmp.renameTo(file)

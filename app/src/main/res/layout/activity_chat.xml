@@ -108,14 +108,36 @@
             android:visibility="gone" />
     </FrameLayout>
 
-    <TextView
-        android:id="@+id/err"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
         android:paddingHorizontal="16dp"
-        android:textColor="@color/wine"
-        android:textSize="12sp"
-        android:visibility="gone" />
+        android:paddingVertical="4dp">
+
+        <TextView
+            android:id="@+id/err"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/wine"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/btnRetry"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_chip"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="6dp"
+            android:text="↺ 重试"
+            android:textColor="@color/candle"
+            android:textSize="12sp"
+            android:visibility="gone" />
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"

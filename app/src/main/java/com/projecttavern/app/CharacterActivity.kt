@@ -60,6 +60,12 @@ class CharacterActivity : AppCompatActivity() {
             save(commitToStore = true)
             finish()
         }
+        // 长按保存按钮 → 保存并导出 JSON（方便分享角色卡）
+        b.btnSave.setOnLongClickListener {
+            save(commitToStore = true)
+            exportCharacterJson()
+            true
+        }
         b.avatarContainer.setOnClickListener { pickAvatar.launch("image/*") }
         b.tapAvatar.setOnClickListener { pickAvatar.launch("image/*") }
         b.avatarContainer.setOnLongClickListener {
@@ -204,5 +210,19 @@ class CharacterActivity : AppCompatActivity() {
             Store.setDefaultWorld(id, if (sel <= 0) null else Store.state.worldBooks.getOrNull(sel - 1)?.id)
             Store.persist()
         }
+    }
+
+    private fun exportCharacterJson() {
+        val c = Store.state.characters.find { it.id == id } ?: draftCharacter
+        val json = Store.exportCharacter(c)
+        val safeName = (c.name.ifBlank { "character" }).replace(Regex("[^\\w\\u4e00-\\u9fff]"), "_")
+        val file = java.io.File(cacheDir, "$safeName.json")
+        file.writeText(json)
+        val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", file)
+        val share = android.content.Intent(android.content.Intent.ACTION_SEND)
+            .setType("application/json")
+            .putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        startActivity(android.content.Intent.createChooser(share, Store.t("exportCharacter")))
     }
 }

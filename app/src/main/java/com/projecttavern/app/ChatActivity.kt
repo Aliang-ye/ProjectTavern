@@ -32,6 +32,9 @@ class ChatActivity : AppCompatActivity() {
     // 智能自动滚动：记录用户是否在底部
     private var userAtBottom = true
 
+    // 错误重试：记录最后一次失败时的 assistant 消息，以便一键重试
+    private var lastFailedAsst: ChatMessage? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         convId = intent.getStringExtra("id") ?: return finish()
@@ -73,6 +76,35 @@ class ChatActivity : AppCompatActivity() {
             }
             true
         }
+        // 重试按钮：出错后一键用上次失败的 assistant 消息重新生成
+        b.btnRetry.setOnClickListener {
+            val failed = lastFailedAsst ?: return@setOnClickListener
+            lastFailedAsst = null
+            b.btnRetry.visibility = View.GONE
+            b.err.visibility = View.GONE
+            // 清空已失败的空内容 assistant 消息，重新生成
+            if (failed.content.isBlank()) {
+                Store.state.messages.removeAll { it.id == failed.id }
+                if (conv()?.tipMessageId == failed.id) conv()?.tipMessageId = failed.parentId
+                Store.persist()
+                refresh()
+                // 取上一条 user 消息触发重新生成
+                val parentUserMsg = Store.state.messages.find { it.id == failed.parentId }
+                if (parentUserMsg != null) {
+                    val profile = Store.activeProfile() ?: return@setOnClickListener
+                    val gen = Generation(Store.nid(), "", profile.model, profile.provider, Store.now())
+                    val newAsst = ChatMessage(Store.nid(), convId, parentUserMsg.id, "assistant", "", mutableListOf(gen), 0, Store.now())
+                    Store.state.messages.add(newAsst)
+                    conv()?.tipMessageId = newAsst.id
+                    conv()?.updatedAt = Store.now()
+                    Store.persist()
+                    refresh()
+                    generate(newAsst, parentUserMsg.id)
+                }
+            } else {
+                generate(failed, failed.parentId)
+            }
+        }
         if (Store.state.developerMode) {
             debugOn = true
             b.debugBox.visibility = View.VISIBLE
@@ -94,6 +126,11 @@ class ChatActivity : AppCompatActivity() {
             "${world.name} · ${world.willName.ifBlank { Store.t("worldWill") }}"
         } else c.title
         b.headerTitle.text = headerName
+        // 长按标题可重命名对话，摆脱自动生成的千篇一律标题
+        b.headerTitle.setOnLongClickListener {
+            showRenameConversationDialog()
+            true
+        }
         val contextText = if (c.storyId == null) Store.t("privateChat") else Store.state.stories.find { it.id == c.storyId }?.name ?: Store.t("stories")
         val live = if (busy) {
             if (Store.state.locale == "en") "Streaming" else "流式中"
@@ -156,6 +193,7 @@ class ChatActivity : AppCompatActivity() {
             return
         }
         b.etDraft.setText("")
+        hideKeyboard()  // 发送后立即收起键盘，让消息列表完整显示
         val user = ChatMessage(Store.nid(), convId, c.tipMessageId, "user", text, mutableListOf(), 0, Store.now())
         Store.state.messages.add(user)
         val gen = Generation(Store.nid(), "", profile.model, profile.provider, Store.now())
@@ -234,9 +272,12 @@ class ChatActivity : AppCompatActivity() {
                     paintSend()
                     b.err.visibility = View.VISIBLE
                     b.err.text = "${Store.t("error")}: ${e.message ?: "error"}"
+                    // 记录失败的消息，显示重试按钮
+                    lastFailedAsst = asst
+                    b.btnRetry.visibility = View.VISIBLE
                     if (asst.content.isBlank()) {
-                        Store.state.messages.removeAll { it.id == asst.id }
-                        if (conv()?.tipMessageId == asst.id) {
+                        // 不删除空消息，留给重试按钮使用
+                        if (conv()?.tipMessageId != asst.id) {
                             conv()?.tipMessageId = fallbackTipId ?: asst.parentId
                         }
                         Store.persist()
@@ -294,17 +335,25 @@ class ChatActivity : AppCompatActivity() {
             try {
                 val full = Llm.stream(profile, messages, preset) { piece ->
                     if (!Store.state.streaming) return@stream
-                    runOnUiThread {
-                        if (isFinishing || isDestroyed) return@runOnUiThread
-                        val g = asst.generations.getOrNull(asst.generationIndex)
-                        if (g != null) {
-                            g.content += piece
-                            asst.content = g.content
-                        } else {
-                            asst.content += piece
-                        }
-                        val lastIdx = adapter.items.indexOfFirst { it.id == asst.id }
-                        if (lastIdx >= 0) adapter.notifyItemChanged(lastIdx, Unit)
+                    // 使用与 generate() 相同的节流机制，避免高速模型续写时卡顿
+                    val g = asst.generations.getOrNull(asst.generationIndex)
+                    if (g != null) {
+                        g.content += piece
+                        asst.content = g.content
+                    } else {
+                        asst.content += piece
+                    }
+                    if (!throttlePending) {
+                        throttlePending = true
+                        uiHandler.postDelayed({
+                            throttlePending = false
+                            if (isFinishing || isDestroyed) return@postDelayed
+                            val idx = adapter.items.indexOfFirst { it.id == asst.id }
+                            if (idx >= 0) {
+                                adapter.notifyItemChanged(idx, Unit)
+                                if (userAtBottom) b.messages.scrollToPosition(adapter.itemCount - 1)
+                            }
+                        }, 60)
                     }
                 }
                 runOnUiThread {
@@ -322,6 +371,8 @@ class ChatActivity : AppCompatActivity() {
                     paintSend()
                     b.err.visibility = View.VISIBLE
                     b.err.text = "${Store.t("error")}: ${e.message ?: "error"}"
+                    lastFailedAsst = asst
+                    b.btnRetry.visibility = View.VISIBLE
                 }
             }
         }
@@ -364,6 +415,37 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
+
+    private fun showRenameConversationDialog() {
+        val c = conv() ?: return
+        val et = android.widget.EditText(this)
+        et.setText(c.title)
+        et.setTextColor(getColor(R.color.ink))
+        et.setHintTextColor(getColor(R.color.muted))
+        et.setSingleLine(true)
+        et.background = getDrawable(R.drawable.bg_input)
+        et.setPadding(dp(12), dp(12), dp(12), dp(12))
+        et.selectAll()
+        val pad = dp(16)
+        val box = android.widget.FrameLayout(this)
+        box.setPadding(pad, dp(12), pad, dp(4))
+        box.addView(et)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("renameConversation"))
+            .setView(box)
+            .setPositiveButton(Store.t("save")) { _, _ ->
+                val newTitle = et.text.toString().trim()
+                if (newTitle.isNotBlank()) {
+                    c.title = newTitle
+                    c.updatedAt = Store.now()
+                    Store.persist()
+                    bindHeader()
+                    Toast.makeText(this, Store.t("renamed"), Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
 
     inner class MsgAdapter : RecyclerView.Adapter<MsgAdapter.VH>() {
         var items: List<ChatMessage> = emptyList()

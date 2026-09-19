@@ -106,7 +106,14 @@ class MainActivity : AppCompatActivity() {
         b.panelStories.root.visibility = goneIf(id != R.id.nav_stories)
         b.panelChats.root.visibility = goneIf(id != R.id.nav_chats)
         b.panelSettings.root.visibility = goneIf(id != R.id.nav_settings)
-        refresh()
+        // 按需刷新：只刷新当前激活的面板，减少不必要的全量重绘
+        when (id) {
+            R.id.nav_characters -> refreshCharacters()
+            R.id.nav_worlds -> refreshWorlds()
+            R.id.nav_stories -> refreshStories()
+            R.id.nav_chats -> refreshChats()
+            R.id.nav_settings -> refreshSettings()
+        }
     }
 
     private fun goneIf(hide: Boolean) = if (hide) View.GONE else View.VISIBLE
@@ -198,6 +205,14 @@ class MainActivity : AppCompatActivity() {
             q.isEmpty() || it.name.lowercase().contains(q) || it.tags.any { t -> t.lowercase().contains(q) }
         }.sortedWith(compareByDescending<Character> { it.isPinned }.thenByDescending { it.updatedAt })
         fill(b.panelCharacters.list) {
+            if (list.isEmpty()) {
+                val tv = TextView(this)
+                tv.text = Store.t("emptyCharacters")
+                tv.setTextColor(getColor(R.color.muted))
+                tv.textSize = 14f
+                tv.setPadding(0, dp(24), 0, 0)
+                it.addView(tv)
+            }
             list.forEach { c ->
                 val row = inflateSwipeRow(
                     it,
@@ -237,6 +252,14 @@ class MainActivity : AppCompatActivity() {
     private fun refreshWorlds() {
         val worlds = Store.state.worldBooks.sortedWith(compareByDescending<WorldBook> { it.isPinned }.thenByDescending { it.updatedAt })
         fill(b.panelWorlds.list) {
+            if (worlds.isEmpty()) {
+                val tv = TextView(this)
+                tv.text = Store.t("emptyWorlds")
+                tv.setTextColor(getColor(R.color.muted))
+                tv.textSize = 14f
+                tv.setPadding(0, dp(24), 0, 0)
+                it.addView(tv)
+            }
             worlds.forEach { w ->
                 val n = Store.state.entries.count { e -> e.worldBookId == w.id }
                 val willName = w.willName.ifBlank { Store.t("worldWill") }
@@ -276,6 +299,14 @@ class MainActivity : AppCompatActivity() {
     private fun refreshStories() {
         val stories = Store.state.stories.sortedWith(compareByDescending<Story> { it.isPinned }.thenByDescending { it.updatedAt })
         fill(b.panelStories.list) {
+            if (stories.isEmpty()) {
+                val tv = TextView(this)
+                tv.text = Store.t("emptyStories")
+                tv.setTextColor(getColor(R.color.muted))
+                tv.textSize = 14f
+                tv.setPadding(0, dp(24), 0, 0)
+                it.addView(tv)
+            }
             stories.forEach { st ->
                 val n = Store.state.participants.count { it.storyId == st.id }
                 val chats = Store.state.conversations.count { it.storyId == st.id }
@@ -313,7 +344,9 @@ class MainActivity : AppCompatActivity() {
                 tv.text = Store.t("noChats")
                 tv.setTextColor(getColor(R.color.muted))
                 tv.textSize = 14f
+                tv.setPadding(0, dp(24), 0, 0)
                 it.addView(tv)
+                return@fill
             }
             allConvs.forEach { c ->
                 val ch = Store.state.characters.find { it.id == c.characterId }
@@ -321,16 +354,25 @@ class MainActivity : AppCompatActivity() {
                     Store.state.worldBooks.find { it.id in c.worldBookIds }
                 } else null
                 val story = Store.state.stories.find { s -> s.id == c.storyId }
-                val subtitle = if (c.storyId == null) {
-                    if (world != null) "${world.name} · ${world.willName.ifBlank { Store.t("worldWill") }}" else Store.t("privateChat")
+                // 最后一条消息预览（最多60字）
+                val lastMsg = Store.state.messages
+                    .filter { it.conversationId == c.id }
+                    .maxByOrNull { it.createdAt }
+                val lastPreview = if (lastMsg != null) {
+                    val text = if (lastMsg.role == "assistant") Engine.display(lastMsg) else lastMsg.content
+                    text.take(60).replace('\n', ' ').let { if (text.length > 60) "$it…" else it }
                 } else {
-                    story?.name ?: Store.t("stories")
+                    if (c.storyId == null) {
+                        if (world != null) "${world.name} · ${world.willName.ifBlank { Store.t("worldWill") }}" else Store.t("privateChat")
+                    } else {
+                        story?.name ?: Store.t("stories")
+                    }
                 }
                 val avatar = ch?.avatar ?: world?.willAvatar
                 inflateSwipeRow(
                     it,
                     title = c.title,
-                    subtitle = subtitle,
+                    subtitle = lastPreview,
                     meta = Store.t("open"),
                     avatarPath = avatar,
                     isPinned = c.isPinned,
