@@ -388,8 +388,8 @@ object Store {
             ?: preferredPreset
         val timestamp = now()
         if (characterId.isNullOrBlank() && storyId != null) {
-            val main = state.participants.find { it.storyId == storyId && it.role == "MAIN_CHARACTER" }
-                ?: state.participants.firstOrNull { it.storyId == storyId }
+            val main = state.participants.find { it.storyId == storyId && it.enabled && it.role == "MAIN_CHARACTER" }
+                ?: state.participants.firstOrNull { it.storyId == storyId && it.enabled }
             if (main != null) {
                 return startConversation(main.characterId, storyId, personaId)
             } else {

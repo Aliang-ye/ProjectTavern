@@ -131,6 +131,7 @@ object Cards {
     private fun importWorldPack(obj: JsonObject): CardImport {
         val worldObj = obj.getAsJsonObject("world") ?: obj
         val world = Store.gson.fromJson(worldObj, WorldBook::class.java) ?: return CardImport()
+        if (world.name.isBlank()) return CardImport()
         world.id = Store.nid()
         world.createdAt = Store.now()
         world.updatedAt = Store.now()
@@ -172,6 +173,7 @@ object Cards {
             createdAt = Store.now(),
             updatedAt = Store.now(),
         )
+        if (ch.name.isBlank()) return CardImport()
         val avatarField = str(data, "avatar")
         if (avatarField.startsWith("data:")) {
             ch.avatar = Store.materializeDataUrl(ctx, avatarField, "avatar_${ch.id}")

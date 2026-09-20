@@ -641,6 +641,7 @@ class ChatActivity : AppCompatActivity() {
                 Store.state.messages.filter { it.parentId == m.id }.forEach { it.parentId = m.parentId }
                 Store.state.messages.removeAll { it.id == m.id }
                 if (conv()?.tipMessageId == m.id) conv()?.tipMessageId = m.parentId
+                conv()?.updatedAt = Store.now()
                 Store.persist()
                 refresh()
             }
@@ -665,7 +666,8 @@ class ChatActivity : AppCompatActivity() {
     private fun exportChatAsMarkdown() {
         val c = conv() ?: return
         val ch = Store.state.characters.find { it.id == c.characterId }
-        val charName = ch?.name ?: c.title
+        val world = if (ch == null && c.worldBookIds.isNotEmpty()) Store.state.worldBooks.find { it.id in c.worldBookIds } else null
+        val charName = ch?.name ?: world?.willName?.ifBlank { null } ?: world?.name ?: c.title.ifBlank { Store.t("chats") }
         val persona = Store.state.personas.find { it.id == c.personaId } ?: Store.state.personas.firstOrNull()
         val userName = persona?.name ?: Store.state.userName.ifBlank { "You" }
         val msgs = path()
@@ -720,13 +722,11 @@ class ChatActivity : AppCompatActivity() {
             .setView(box)
             .setPositiveButton(Store.t("save")) { _, _ ->
                 val newTitle = et.text.toString().trim()
-                if (newTitle.isNotBlank()) {
-                    c.title = newTitle
-                    c.updatedAt = Store.now()
-                    Store.persist()
-                    bindHeader()
-                    Toast.makeText(this, Store.t("renamed"), Toast.LENGTH_SHORT).show()
-                }
+                c.title = newTitle
+                c.updatedAt = Store.now()
+                Store.persist()
+                bindHeader()
+                Toast.makeText(this, Store.t("renamed"), Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(Store.t("cancel"), null)
             .show()

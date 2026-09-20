@@ -122,6 +122,16 @@ class EngineLogicTest {
     }
 
     @Test
+    fun storyChatSkipsDisabledMainCharacter() {
+        val story = Story(id = "disabled-main", name = "雾夜", worldBookIds = mutableListOf("world-dusk"))
+        Store.state.stories.add(story)
+        Store.state.participants.add(StoryParticipant("off-main", story.id, "char-alice", "MAIN_CHARACTER", enabled = false))
+        Store.state.participants.add(StoryParticipant("on-comp", story.id, "char-raen", "COMPANION", enabled = true))
+        val id = Store.startConversation(null, story.id)!!
+        assertEquals("char-raen", Store.state.conversations.first { it.id == id }.characterId)
+    }
+
+    @Test
     fun startStoryChatCopiesWorldBookIds() {
         val story = Store.state.stories.first { it.id == "story-first" }
         val original = ArrayList(story.worldBookIds)
