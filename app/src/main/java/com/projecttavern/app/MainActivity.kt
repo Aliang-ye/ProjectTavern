@@ -42,6 +42,8 @@ class MainActivity : AppCompatActivity() {
                                 refresh()
                                 Toast.makeText(this, Store.t("backupRestored"), Toast.LENGTH_SHORT).show()
                             }
+                        } else {
+                            Toast.makeText(this, Store.t("invalidCharacterJson"), Toast.LENGTH_SHORT).show()
                         }
                     }
                 } catch (e: Exception) {

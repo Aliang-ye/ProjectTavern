@@ -26,10 +26,11 @@ object Llm {
         preset: Preset,
         onDelta: (String) -> Unit,
         streaming: Boolean = Store.state.streaming,
+        cancellable: Boolean = true,
     ): String {
         assertSafeUrl(if (profile.provider == "claude") claudeUrl(profile) else openaiUrl(profile))
-        return if (profile.provider == "claude") streamClaude(profile, messages, preset, onDelta, streaming)
-        else streamOpenAI(profile, messages, preset, onDelta, streaming)
+        return if (profile.provider == "claude") streamClaude(profile, messages, preset, onDelta, streaming, cancellable)
+        else streamOpenAI(profile, messages, preset, onDelta, streaming, cancellable)
     }
 
     fun testConnection(p: ApiProfile): Pair<Boolean, String> {
@@ -136,6 +137,7 @@ object Llm {
         preset: Preset,
         onDelta: (String) -> Unit,
         streaming: Boolean,
+        cancellable: Boolean,
     ): String {
         val apiKey = p.apiKey.replace("\r", "").replace("\n", "").trim()
         require(apiKey.isNotBlank()) { "OpenAI API key is required" }
@@ -162,7 +164,7 @@ object Llm {
             .post(body.toRequestBody("application/json".toMediaType()))
             .build()
         return if (streaming) {
-            readSse(req, onDelta) { json ->
+            readSse(req, onDelta, cancellable) { json ->
                 val choice = json.optJSONArray("choices")?.optJSONObject(0)
                 val delta = choice?.optJSONObject("delta")
                 delta?.optString("content")?.ifEmpty { null }
@@ -170,7 +172,7 @@ object Llm {
                     ?: ""
             }
         } else {
-            completeOnce(req, onDelta)
+            completeOnce(req, onDelta, cancellable)
         }
     }
 
@@ -180,6 +182,7 @@ object Llm {
         preset: Preset,
         onDelta: (String) -> Unit,
         streaming: Boolean,
+        cancellable: Boolean,
     ): String {
         val apiKey = p.apiKey.replace("\r", "").replace("\n", "").trim()
         require(apiKey.isNotBlank()) { "Claude API key is required" }
@@ -220,23 +223,28 @@ object Llm {
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
         return if (streaming) {
-            readSse(req, onDelta) { json ->
+            readSse(req, onDelta, cancellable) { json ->
                 if (json.optString("type") == "content_block_delta") {
                     json.optJSONObject("delta")?.optString("text").orEmpty()
                 } else json.optJSONObject("delta")?.optString("text").orEmpty()
             }
         } else {
-            completeOnce(req, onDelta)
+            completeOnce(req, onDelta, cancellable)
         }
     }
 
-    private fun completeOnce(req: Request, onDelta: (String) -> Unit): String {
+    private fun completeOnce(req: Request, onDelta: (String) -> Unit, cancellable: Boolean): String {
         val call = client.newCall(req)
-        currentCall = call
-        val res = call.execute()
+        if (cancellable) currentCall = call
+        val res = try {
+            call.execute()
+        } catch (e: java.io.IOException) {
+            if (call.isCanceled()) throw RuntimeException("CANCELLED")
+            throw e
+        }
         val body = res.body?.string().orEmpty()
         res.close()
-        currentCall = null
+        if (cancellable && currentCall === call) currentCall = null
         if (!res.isSuccessful) throw RuntimeException(mapStatus(res.code, body))
         val json = JSONObject(body)
         val text = json.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
@@ -248,21 +256,26 @@ object Llm {
         return text
     }
 
-    private fun readSse(req: Request, onDelta: (String) -> Unit, pick: (JSONObject) -> String): String {
+    private fun readSse(req: Request, onDelta: (String) -> Unit, cancellable: Boolean, pick: (JSONObject) -> String): String {
         val call = client.newCall(req)
-        currentCall = call
-        val res = call.execute()
+        if (cancellable) currentCall = call
+        val res = try {
+            call.execute()
+        } catch (e: java.io.IOException) {
+            if (call.isCanceled()) throw RuntimeException("CANCELLED")
+            throw e
+        }
         if (!res.isSuccessful) {
             val err = res.body?.string().orEmpty()
             res.close()
-            currentCall = null
+            if (cancellable && currentCall === call) currentCall = null
             throw RuntimeException(mapStatus(res.code, err))
         }
 
         val full = StringBuilder()
         val responseBody = res.body ?: run {
             res.close()
-            currentCall = null
+            if (cancellable && currentCall === call) currentCall = null
             return ""
         }
 
@@ -274,7 +287,8 @@ object Llm {
                 val s = rawLine.trim()
                 if (!s.startsWith("data:")) continue
                 val data = s.removePrefix("data:").trim()
-                if (data.isEmpty() || data == "[DONE]") continue
+                if (data.isEmpty()) continue
+                if (data == "[DONE]") break
                 try {
                     val json = JSONObject(data)
                     val errObj = json.optJSONObject("error")
@@ -282,30 +296,31 @@ object Llm {
                         val msg = errObj.optString("message").ifBlank { errObj.toString() }
                         throw RuntimeException(msg)
                     }
+                    if (json.optString("type") == "message_stop") break
                     val piece = pick(json)
                     if (piece.isNotEmpty()) {
                         full.append(piece)
                         onDelta(piece)
                     }
-                    // DeepSeek-R1 等思维链模型：捕获 reasoning_content 作为 fallback
                     val choice0 = json.optJSONArray("choices")?.optJSONObject(0)
                     val reasonPiece = choice0?.optJSONObject("delta")?.optString("reasoning_content").orEmpty()
                     if (reasonPiece.isNotEmpty()) reasoning.append(reasonPiece)
                 } catch (e: Exception) {
                     if (e is RuntimeException && e.message != null && !e.message!!.startsWith("Malformed")) throw e
-                    // 格式错误的 SSE 行：静默跳过，不中断整个流
                     continue
                 }
             }
-            // 若正文为空但有思维链内容（DeepSeek-R1），将思维链作为输出
             if (full.isEmpty() && reasoning.isNotEmpty()) {
                 val reasonText = reasoning.toString()
                 full.append(reasonText)
                 onDelta(reasonText)
             }
+        } catch (e: java.io.IOException) {
+            if (call.isCanceled()) throw RuntimeException("CANCELLED")
+            throw e
         } finally {
             res.close()
-            currentCall = null
+            if (cancellable && currentCall === call) currentCall = null
         }
 
         if (full.isEmpty()) {

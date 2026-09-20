@@ -61,9 +61,10 @@ object Store {
     private val ioExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val stateLock = Any()
 
+    fun <T> locked(block: () -> T): T = synchronized(stateLock, block)
+
     fun persist() {
-        // 在派发到后台写盘线程前，先在调用方线程建立独立集合快照，彻底消灭 ConcurrentModificationException
-        val snapshot = synchronized(stateLock) {
+        val snapshot = locked {
             state.copy(
                 characters = ArrayList(state.characters),
                 characterWorldBooks = ArrayList(state.characterWorldBooks),
@@ -71,15 +72,16 @@ object Store {
                 entries = ArrayList(state.entries),
                 stories = ArrayList(state.stories),
                 participants = ArrayList(state.participants),
-                conversations = ArrayList(state.conversations),
-                messages = ArrayList(state.messages),
+                conversations = ArrayList(state.conversations.map { it.copy(worldBookIds = ArrayList(it.worldBookIds)) }),
+                messages = ArrayList(state.messages.map { m ->
+                    m.copy(generations = ArrayList(m.generations.map { g -> g.copy() }))
+                }),
                 presets = ArrayList(state.presets),
                 profiles = ArrayList(state.profiles.map { it.copy() }),
                 personas = ArrayList(state.personas),
                 memories = ArrayList(state.memories)
-            )
+            ).also { it.profiles.forEach { p -> p.apiKey = "" } }
         }
-        snapshot.profiles.forEach { it.apiKey = "" }
         if (::appContext.isInitialized) {
             state.profiles.forEach { p ->
                 if (p.apiKey.isNotBlank()) Secrets.save(appContext, p.id, p.apiKey)

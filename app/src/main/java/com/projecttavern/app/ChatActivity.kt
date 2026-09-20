@@ -105,6 +105,14 @@ class ChatActivity : AppCompatActivity() {
                     generate(newAsst, parentUserMsg.id)
                 }
             } else {
+                val profile = Store.profileFor(conv()) ?: return@setOnClickListener
+                val current = failed.generations.getOrNull(failed.generationIndex)
+                if (current != null && failed.content.isNotBlank()) current.content = failed.content
+                failed.generations.add(Generation(Store.nid(), "", profile.model, profile.provider, Store.now()))
+                failed.generationIndex = failed.generations.lastIndex
+                failed.content = ""
+                Store.persist()
+                refresh()
                 generate(failed, failed.parentId)
             }
         }
@@ -183,9 +191,22 @@ class ChatActivity : AppCompatActivity() {
         }
         super.onDestroy()
         Llm.cancel()
-        // 退出时清理残留的空白失败 assistant 消息，保证消息树整洁
-        val removed = Store.state.messages.removeAll { it.conversationId == convId && it.role == "assistant" && it.content.isBlank() }
-        if (removed) Store.persist()
+        val c = conv()
+        val removed = Store.state.messages.removeAll { m ->
+            m.conversationId == convId &&
+                m.role == "assistant" &&
+                m.content.isBlank() &&
+                m.generations.all { it.content.isBlank() }
+        }
+        var tipFixed = false
+        if (c != null && c.tipMessageId != null && Store.state.messages.none { it.id == c.tipMessageId }) {
+            c.tipMessageId = Store.state.messages
+                .filter { it.conversationId == convId }
+                .maxByOrNull { it.createdAt }
+                ?.id
+            tipFixed = true
+        }
+        if (removed || tipFixed) Store.persist()
     }
 
     private fun paintSend() {
@@ -280,11 +301,15 @@ class ChatActivity : AppCompatActivity() {
                     }
                 }, Store.state.streaming)
                 runOnUiThread {
-                    if (isFinishing || isDestroyed) return@runOnUiThread
-                    val g = asst.generations[asst.generationIndex]
-                    if (full.isNotBlank()) g.content = full
-                    asst.content = g.content
+                    val g = asst.generations.getOrNull(asst.generationIndex) ?: asst.generations.lastOrNull()
+                    if (g != null) {
+                        if (full.isNotBlank()) g.content = full
+                        asst.content = g.content
+                    } else if (full.isNotBlank()) {
+                        asst.content = full
+                    }
                     Store.persist()
+                    if (isFinishing || isDestroyed) return@runOnUiThread
                     busy = false
                     streamTarget = null
                     paintSend()
@@ -296,22 +321,21 @@ class ChatActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
+                    if (e.message != "CANCELLED" || asst.content.isNotBlank()) Store.persist()
+                    if (isFinishing || isDestroyed) return@runOnUiThread
                     busy = false
                     streamTarget = null
                     paintSend()
+                    if (e.message == "CANCELLED") return@runOnUiThread
                     b.err.visibility = View.VISIBLE
                     b.err.text = "${Store.t("error")}: ${e.message ?: "error"}"
-                    // 记录失败的消息，显示重试按钮
                     lastFailedAsst = asst
                     b.btnRetry.visibility = View.VISIBLE
-                    if (asst.content.isBlank()) {
-                        // 不删除空消息，留给重试按钮使用
-                        if (conv()?.tipMessageId != asst.id) {
-                            conv()?.tipMessageId = fallbackTipId ?: asst.parentId
-                        }
+                    if (asst.content.isBlank() && conv()?.tipMessageId != asst.id) {
+                        conv()?.tipMessageId = fallbackTipId ?: asst.parentId
                         Store.persist()
-                        refresh()
                     }
+                    refresh()
                 }
             }
         }
@@ -390,20 +414,29 @@ class ChatActivity : AppCompatActivity() {
                     }
                 }, Store.state.streaming)
                 runOnUiThread {
-                    if (isFinishing || isDestroyed) return@runOnUiThread
                     val g = asst.generations.getOrNull(asst.generationIndex)
-                    if (g != null && full.isNotBlank()) {
-                        g.content = asst.content
+                    if (full.isNotBlank()) {
+                        if (g != null) {
+                            if (!Store.state.streaming) g.content += full
+                            else g.content = asst.content
+                            asst.content = g.content
+                        } else if (!Store.state.streaming) {
+                            asst.content += full
+                        }
                     }
                     Store.persist()
+                    if (isFinishing || isDestroyed) return@runOnUiThread
                     busy = false
                     paintSend()
                     refresh(forceBottom = userAtBottom)
                 }
             } catch (e: Exception) {
                 runOnUiThread {
+                    Store.persist()
+                    if (isFinishing || isDestroyed) return@runOnUiThread
                     busy = false
                     paintSend()
+                    if (e.message == "CANCELLED") return@runOnUiThread
                     b.err.visibility = View.VISIBLE
                     b.err.text = "${Store.t("error")}: ${e.message ?: "error"}"
                     lastFailedAsst = asst
@@ -460,7 +493,14 @@ class ChatActivity : AppCompatActivity() {
         val prompt = Engine.summaryPrompt(convId, conv()?.tipMessageId)
         thread {
             try {
-                val text = Llm.stream(profile, prompt, preset.copy(maxTokens = 280, responseBudget = 280), {}, false)
+                val text = Llm.stream(
+                    profile,
+                    prompt,
+                    preset.copy(maxTokens = 280, responseBudget = 280),
+                    {},
+                    streaming = false,
+                    cancellable = false,
+                )
                 runOnUiThread {
                     if (text.isNotBlank()) {
                         Engine.upsertMemory(convId, text.trim())
