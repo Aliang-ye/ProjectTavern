@@ -166,11 +166,13 @@
 
         <TextView
             android:id="@+id/btnSend"
-            android:layout_width="48dp"
+            android:layout_width="wrap_content"
             android:layout_height="48dp"
+            android:minWidth="48dp"
             android:layout_marginStart="8dp"
             android:background="@drawable/bg_send"
             android:gravity="center"
+            android:paddingHorizontal="12dp"
             android:textColor="@color/on_candle"
             android:textSize="13sp" />
     </LinearLayout>

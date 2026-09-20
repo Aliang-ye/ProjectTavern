@@ -25,9 +25,9 @@ class WorldActivity : AppCompatActivity() {
             val w = current()
             val saved = saveAvatar(this, "will_${w.id}", uri)
             if (saved != null) {
+                applyFormToDraft()
                 w.willAvatar = saved
-                renderAvatar(b.willAvatar, b.willAvatarImg, w.willName, w.willAvatar)
-                if (!isNew) Store.persist()
+                renderAvatar(b.willAvatar, b.willAvatarImg, w.willName.ifBlank { Store.t("worldWill") }, w.willAvatar)
             }
         }
     }
@@ -65,7 +65,7 @@ class WorldActivity : AppCompatActivity() {
         setContentView(b.root)
         setupTouchToHideKeyboard(b.root, this)
 
-        b.btnBack.setOnClickListener { finish() }
+        b.btnBack.setOnClickListener { askLeave() }
         b.btnSave.setOnClickListener {
             save(commitToStore = true)
             finish()
@@ -167,8 +167,7 @@ class WorldActivity : AppCompatActivity() {
         b.btnChatWill.text = Store.t("chatWithWill")
         b.btnChatWill.setOnClickListener {
             save(commitToStore = true)
-            val convId = Store.startWorldWillConversation(w.id) ?: return@setOnClickListener
-            openScreen(ChatActivity::class.java) { it.putExtra("id", convId) }
+            offerWorldChat(w.id)
         }
 
         b.lWillName.text = Store.t("willName")
@@ -324,7 +323,30 @@ class WorldActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun save(commitToStore: Boolean = false) {
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        askLeave()
+    }
+
+    private fun askLeave() {
+        applyFormToDraft()
+        if (!isDirty()) {
+            finish()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(Store.t("unsavedTitle"))
+            .setMessage(Store.t("unsavedBody"))
+            .setPositiveButton(Store.t("save")) { _, _ ->
+                save(commitToStore = true)
+                finish()
+            }
+            .setNegativeButton(Store.t("discard")) { _, _ -> finish() }
+            .setNeutralButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun applyFormToDraft() {
         val w = current()
         writeSection()
         w.name = b.etName.text.toString().ifBlank { Store.t("newWorld") }
@@ -339,15 +361,60 @@ class WorldActivity : AppCompatActivity() {
             if (Store.state.locale == "en") "You are the World Will and Narrator for ${w.name}. Vividly describe environments, atmosphere, and NPCs. React to {{user}}'s actions, but never speak or act on behalf of {{user}}." else "你是【${w.name}】的【世界意志】与故事讲述者（World Will / Narrator）。\n根据世界法则与设定，生动描绘环境与NPC，推动情节，绝不代替玩家（{{user}}）发言或行动。"
         }
         w.updatedAt = Store.now()
+    }
 
-        if (commitToStore) {
-            if (isNew && Store.state.worldBooks.none { it.id == w.id }) {
-                Store.state.worldBooks.add(0, w)
-                draftEntries.forEach {
-                    if (Store.state.entries.none { e -> e.id == it.id }) Store.state.entries.add(it)
-                }
-                isNew = false
+    private fun isDirty(): Boolean {
+        if (isNew) {
+            return current().name != Store.t("newWorld") ||
+                current().description.isNotBlank() ||
+                current().geography.isNotBlank() ||
+                draftEntries.isNotEmpty()
+        }
+        val orig = Store.state.worldBooks.find { it.id == id } ?: return true
+        val w = current()
+        return orig.name != w.name ||
+            orig.description != w.description ||
+            orig.geography != w.geography ||
+            orig.history != w.history ||
+            orig.institutions != w.institutions ||
+            orig.culture != w.culture ||
+            orig.personalNotes != w.personalNotes ||
+            orig.willName != w.willName ||
+            orig.willDescription != w.willDescription ||
+            orig.willScenario != w.willScenario ||
+            orig.willFirstMessage != w.willFirstMessage ||
+            orig.willSystemPrompt != w.willSystemPrompt ||
+            orig.willAvatar != w.willAvatar ||
+            orig.willAlternateGreetings != w.willAlternateGreetings
+    }
+
+    private fun offerWorldChat(worldBookId: String) {
+        val last = Store.lastWorldWillChat(worldBookId)
+        if (last == null) {
+            val convId = Store.startWorldWillConversation(worldBookId) ?: return
+            openScreen(ChatActivity::class.java) { it.putExtra("id", convId) }
+            return
+        }
+        AlertDialog.Builder(this)
+            .setItems(arrayOf(Store.t("continueLastChat"), Store.t("startNewChat"))) { _, which ->
+                val convId = if (which == 0) last.id else Store.startWorldWillConversation(worldBookId)
+                if (convId != null) openScreen(ChatActivity::class.java) { it.putExtra("id", convId) }
             }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun save(commitToStore: Boolean = false) {
+        applyFormToDraft()
+        val w = current()
+        if (commitToStore) {
+            val idx = Store.state.worldBooks.indexOfFirst { it.id == w.id }
+            if (idx >= 0) Store.state.worldBooks[idx] = w
+            else Store.state.worldBooks.add(0, w)
+            draftEntries.forEach { entry ->
+                if (Store.state.entries.none { it.id == entry.id }) Store.state.entries.add(entry)
+            }
+            isNew = false
             Store.persist()
         }
     }

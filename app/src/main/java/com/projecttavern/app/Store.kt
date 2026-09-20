@@ -315,9 +315,25 @@ object Store {
         return conv.id
     }
 
+    fun lastPrivateChat(characterId: String): Conversation? {
+        return state.conversations
+            .filter { it.characterId == characterId && it.storyId == null }
+            .maxByOrNull { it.updatedAt }
+    }
+
+    fun lastWorldWillChat(worldBookId: String): Conversation? {
+        return state.conversations
+            .filter { it.storyId == null && it.characterId.isBlank() && worldBookId in it.worldBookIds }
+            .maxByOrNull { it.updatedAt }
+    }
+
     fun startConversation(characterId: String? = null, storyId: String? = null, personaId: String? = null): String? {
         val story = if (storyId != null) state.stories.find { it.id == storyId } else null
-        val effectivePresetId = state.presets.firstOrNull { it.locale == state.locale }?.id ?: state.presets.firstOrNull()?.id ?: "preset-default"
+        val preferredPreset = if (state.locale == "en") "preset-default-en" else "preset-default"
+        val effectivePresetId = state.presets.firstOrNull { it.id == preferredPreset }?.id
+            ?: state.presets.firstOrNull { it.locale == state.locale }?.id
+            ?: state.presets.firstOrNull()?.id
+            ?: preferredPreset
         val timestamp = now()
         if (characterId.isNullOrBlank() && storyId != null) {
             val main = state.participants.find { it.storyId == storyId && it.role == "MAIN_CHARACTER" }

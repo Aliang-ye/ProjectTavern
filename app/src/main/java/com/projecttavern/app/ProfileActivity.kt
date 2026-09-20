@@ -99,6 +99,7 @@ class ProfileActivity : AppCompatActivity() {
                 if (provider == "claude") "claude-3-5-sonnet-20241022" else "gpt-4o-mini"
             }
             val key = b.etKey.text.toString().replace("\r", "").replace("\n", "").trim()
+                .ifBlank { p.apiKey.ifBlank { Secrets.get(this, id) } }
             val tempProfile = ApiProfile(
                 id = id,
                 name = b.etName.text.toString(),

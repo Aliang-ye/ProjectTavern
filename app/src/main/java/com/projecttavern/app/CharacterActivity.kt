@@ -19,10 +19,10 @@ class CharacterActivity : AppCompatActivity() {
         if (uri != null) {
             val path = saveAvatar(this, id, uri)
             if (path != null) {
+                applyFormToDraft()
                 current().avatar = path
                 current().updatedAt = Store.now()
-                if (!isNew) Store.persist()
-                bind()
+                renderAvatar(b.avatar, b.avatarImg, current().name, current().avatar)
             }
         }
     }
@@ -55,7 +55,7 @@ class CharacterActivity : AppCompatActivity() {
 
         b = ActivityCharacterBinding.inflate(layoutInflater)
         setContentView(b.root)
-        b.btnBack.setOnClickListener { finish() }
+        b.btnBack.setOnClickListener { askLeave() }
         b.btnSave.setOnClickListener {
             save(commitToStore = true)
             finish()
@@ -72,17 +72,16 @@ class CharacterActivity : AppCompatActivity() {
             val c = current()
             if (c.avatar != null) {
                 confirm(this, Store.t("deleteQ")) {
+                    applyFormToDraft()
                     c.avatar = null
-                    if (!isNew) Store.persist()
-                    bind()
+                    renderAvatar(b.avatar, b.avatarImg, c.name, c.avatar)
                 }
             }
             true
         }
         b.btnPrivate.setOnClickListener {
             save(commitToStore = true)
-            val cid = Store.startConversation(id, null) ?: return@setOnClickListener
-            startActivity(Intent(this, ChatActivity::class.java).putExtra("id", cid))
+            offerCharacterChat(id)
         }
         b.btnExport.setOnClickListener {
             save(commitToStore = !isNew)
@@ -194,7 +193,30 @@ class CharacterActivity : AppCompatActivity() {
         b.spWorld.setSelection(if (idx >= 0) idx + 1 else 0)
     }
 
-    private fun save(commitToStore: Boolean = false) {
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        askLeave()
+    }
+
+    private fun askLeave() {
+        applyFormToDraft()
+        if (!isDirty()) {
+            finish()
+            return
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("unsavedTitle"))
+            .setMessage(Store.t("unsavedBody"))
+            .setPositiveButton(Store.t("save")) { _, _ ->
+                save(commitToStore = true)
+                finish()
+            }
+            .setNegativeButton(Store.t("discard")) { _, _ -> finish() }
+            .setNeutralButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun applyFormToDraft() {
         val c = current()
         c.name = b.etName.text.toString().ifBlank { Store.t("newCharacter") }
         c.tags = b.etTags.text.toString().split(Regex("[,，;；\\s]+")).map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
@@ -207,12 +229,55 @@ class CharacterActivity : AppCompatActivity() {
         c.systemPrompt = b.etSystem.text.toString()
         c.creatorNotes = b.etNotes.text.toString()
         c.updatedAt = Store.now()
+    }
 
-        if (commitToStore) {
-            if (isNew && Store.state.characters.none { it.id == c.id }) {
-                Store.state.characters.add(0, c)
-                isNew = false
+    private fun isDirty(): Boolean {
+        if (isNew) {
+            return current().name != Store.t("newCharacter") ||
+                current().description.isNotBlank() ||
+                current().personality.isNotBlank() ||
+                current().scenario.isNotBlank() ||
+                current().avatar != null
+        }
+        val orig = Store.state.characters.find { it.id == id } ?: return true
+        val c = current()
+        return orig.name != c.name ||
+            orig.description != c.description ||
+            orig.personality != c.personality ||
+            orig.scenario != c.scenario ||
+            orig.firstMessage != c.firstMessage ||
+            orig.exampleDialogues != c.exampleDialogues ||
+            orig.systemPrompt != c.systemPrompt ||
+            orig.creatorNotes != c.creatorNotes ||
+            orig.avatar != c.avatar ||
+            orig.tags != c.tags ||
+            orig.alternateGreetings != c.alternateGreetings
+    }
+
+    private fun offerCharacterChat(characterId: String) {
+        val last = Store.lastPrivateChat(characterId)
+        if (last == null) {
+            val cid = Store.startConversation(characterId, null) ?: return
+            startActivity(Intent(this, ChatActivity::class.java).putExtra("id", cid))
+            return
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setItems(arrayOf(Store.t("continueLastChat"), Store.t("startNewChat"))) { _, which ->
+                val cid = if (which == 0) last.id else Store.startConversation(characterId, null)
+                if (cid != null) startActivity(Intent(this, ChatActivity::class.java).putExtra("id", cid))
             }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun save(commitToStore: Boolean = false) {
+        applyFormToDraft()
+        val c = current()
+        if (commitToStore) {
+            val idx = Store.state.characters.indexOfFirst { it.id == c.id }
+            if (idx >= 0) Store.state.characters[idx] = c
+            else Store.state.characters.add(0, c)
+            isNew = false
             val sel = b.spWorld.selectedItemPosition
             Store.setDefaultWorld(id, if (sel <= 0) null else Store.state.worldBooks.getOrNull(sel - 1)?.id)
             Store.persist()

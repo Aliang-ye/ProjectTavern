@@ -210,7 +210,7 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun paintSend() {
-        b.btnSend.text = if (busy) "■" else Store.t("send").take(2)
+        b.btnSend.text = if (busy) "■" else if (Store.state.locale == "en") "Go" else "发送"
         b.btnSend.setBackgroundResource(if (busy) R.drawable.bg_stop else R.drawable.bg_send)
         val c = conv() ?: return
         val contextText = if (c.storyId == null) Store.t("privateChat") else Store.state.stories.find { it.id == c.storyId }?.name ?: Store.t("stories")

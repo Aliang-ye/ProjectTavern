@@ -197,6 +197,38 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun offerCharacterChat(characterId: String) {
+        val last = Store.lastPrivateChat(characterId)
+        if (last == null) {
+            val id = Store.startConversation(characterId, null) ?: return
+            openScreen(ChatActivity::class.java) { it.putExtra("id", id) }
+            return
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setItems(arrayOf(Store.t("continueLastChat"), Store.t("startNewChat"))) { _, which ->
+                val id = if (which == 0) last.id else Store.startConversation(characterId, null)
+                if (id != null) openScreen(ChatActivity::class.java) { it.putExtra("id", id) }
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun offerWorldChat(worldBookId: String) {
+        val last = Store.lastWorldWillChat(worldBookId)
+        if (last == null) {
+            val convId = Store.startWorldWillConversation(worldBookId) ?: return
+            openScreen(ChatActivity::class.java) { it.putExtra("id", convId) }
+            return
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setItems(arrayOf(Store.t("continueLastChat"), Store.t("startNewChat"))) { _, which ->
+                val convId = if (which == 0) last.id else Store.startWorldWillConversation(worldBookId)
+                if (convId != null) openScreen(ChatActivity::class.java) { it.putExtra("id", convId) }
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
+
     private fun pickNewChat() {
         val chars = Store.state.characters
         if (chars.isEmpty()) {
@@ -207,8 +239,7 @@ class MainActivity : AppCompatActivity() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle(Store.t("pickCharacter"))
             .setItems(names) { _, which ->
-                val id = Store.startConversation(chars[which].id, null) ?: return@setItems
-                openScreen(ChatActivity::class.java) { it.putExtra("id", id) }
+                offerCharacterChat(chars[which].id)
             }
             .setNegativeButton(Store.t("cancel"), null)
             .show()
@@ -400,8 +431,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 )
                 row.findViewById<TextView>(R.id.meta).setOnClickListener { _ ->
-                    val id = Store.startConversation(c.id, null) ?: return@setOnClickListener
-                    openScreen(ChatActivity::class.java) { it.putExtra("id", id) }
+                    offerCharacterChat(c.id)
                 }
             }
             addMaxDisplayNotice(it, displayed.size, list.size)
@@ -452,8 +482,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 )
                 row.findViewById<TextView>(R.id.meta).setOnClickListener { _ ->
-                    val convId = Store.startWorldWillConversation(w.id) ?: return@setOnClickListener
-                    openScreen(ChatActivity::class.java) { intent -> intent.putExtra("id", convId) }
+                    offerWorldChat(w.id)
                 }
             }
             addMaxDisplayNotice(it, displayed.size, worlds.size)

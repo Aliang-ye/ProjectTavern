@@ -43,7 +43,7 @@ class StoryActivity : AppCompatActivity() {
 
         b = ActivityStoryBinding.inflate(layoutInflater)
         setContentView(b.root)
-        b.btnBack.setOnClickListener { finish() }
+        b.btnBack.setOnClickListener { askLeave() }
         b.btnSave.setOnClickListener {
             save(commitToStore = true)
             finish()
@@ -98,7 +98,8 @@ class StoryActivity : AppCompatActivity() {
 
     private fun current(): Story = draftStory
 
-    private fun bind() {
+    private fun bind(keepForm: Boolean = false) {
+        if (keepForm) applyFormToDraft()
         val st = current()
         b.headerTitle.text = if (isNew) Store.t("newStoryTitle") else st.name.ifBlank { Store.t("newStory") }
         b.btnSave.text = if (isNew) Store.t("create") else Store.t("save")
@@ -107,8 +108,10 @@ class StoryActivity : AppCompatActivity() {
         b.tabStory.text = Store.t("tabStory")
         b.tabCast.text = Store.t("tabCast")
         b.tabWorlds.text = Store.t("tabWorlds")
-        b.lName.text = Store.t("name"); b.etName.setText(st.name)
-        b.lDesc.text = Store.t("storyDesc"); b.etDesc.setText(st.description)
+        b.lName.text = Store.t("name")
+        if (!keepForm) b.etName.setText(st.name)
+        b.lDesc.text = Store.t("storyDesc")
+        if (!keepForm) b.etDesc.setText(st.description)
         b.lPersona.text = Store.t("storyPersona")
         b.lWorld.text = Store.t("storyWorld")
         b.lCast.text = Store.t("storyCast")
@@ -169,7 +172,7 @@ class StoryActivity : AppCompatActivity() {
                         Store.state.participants.removeAll { it.id == p.id }
                         Store.persist()
                     }
-                    bind()
+                    bind(keepForm = true)
                 }
                 row.addView(tv); row.addView(rm)
                 row.setPadding(0, dp(6), 0, dp(6))
@@ -196,27 +199,69 @@ class StoryActivity : AppCompatActivity() {
                     participants.add(StoryParticipant(Store.nid(), id, ch.id, role, true, if (role == "MAIN_CHARACTER") 100 else 50))
                 }
                 if (!isNew) Store.persist()
-                bind()
+                bind(keepForm = true)
             }
             .show()
     }
 
-    private fun save(commitToStore: Boolean = false) {
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        askLeave()
+    }
+
+    private fun askLeave() {
+        applyFormToDraft()
+        if (!isDirty()) {
+            finish()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(Store.t("unsavedTitle"))
+            .setMessage(Store.t("unsavedBody"))
+            .setPositiveButton(Store.t("save")) { _, _ ->
+                save(commitToStore = true)
+                finish()
+            }
+            .setNegativeButton(Store.t("discard")) { _, _ -> finish() }
+            .setNeutralButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun applyFormToDraft() {
         val st = current()
         st.name = b.etName.text.toString().ifBlank { Store.t("newStory") }
         st.description = b.etDesc.text.toString()
         val sel = b.spPersona.selectedItemPosition
         st.personaId = if (sel <= 0) null else Store.state.personas.getOrNull(sel - 1)?.id
         st.updatedAt = Store.now()
+    }
 
+    private fun isDirty(): Boolean {
+        if (isNew) {
+            return current().name != Store.t("newStory") ||
+                current().description.isNotBlank() ||
+                draftParticipants.isNotEmpty() ||
+                current().worldBookIds.isNotEmpty()
+        }
+        val orig = Store.state.stories.find { it.id == id } ?: return true
+        val st = current()
+        return orig.name != st.name ||
+            orig.description != st.description ||
+            orig.personaId != st.personaId ||
+            orig.worldBookIds != st.worldBookIds
+    }
+
+    private fun save(commitToStore: Boolean = false) {
+        applyFormToDraft()
+        val st = current()
         if (commitToStore) {
-            if (isNew && Store.state.stories.none { it.id == st.id }) {
-                Store.state.stories.add(0, st)
-                draftParticipants.forEach {
-                    if (Store.state.participants.none { p -> p.id == it.id }) Store.state.participants.add(it)
-                }
-                isNew = false
+            val idx = Store.state.stories.indexOfFirst { it.id == st.id }
+            if (idx >= 0) Store.state.stories[idx] = st
+            else Store.state.stories.add(0, st)
+            draftParticipants.forEach { p ->
+                if (Store.state.participants.none { it.id == p.id }) Store.state.participants.add(p)
             }
+            isNew = false
             Store.persist()
         }
     }
