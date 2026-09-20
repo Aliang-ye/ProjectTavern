@@ -132,6 +132,31 @@ class EngineLogicTest {
     }
 
     @Test
+    fun storyChatFallsBackToWorldWhenOnlyParticipantIsDeleted() {
+        val story = Story(id = "orphan-cast", name = "雾夜", worldBookIds = mutableListOf("world-dusk"))
+        Store.state.stories.add(story)
+        Store.state.participants.add(StoryParticipant("orphan", story.id, "missing", "MAIN_CHARACTER", enabled = true))
+        val id = Store.startConversation(null, story.id)!!
+        val conv = Store.state.conversations.first { it.id == id }
+        assertEquals("", conv.characterId)
+        assertEquals(story.worldBookIds, conv.worldBookIds)
+    }
+
+    @Test
+    fun restoringDifferentProfilesKeepsLocalKeyProfile() {
+        Store.state.profiles.clear()
+        Store.state.profiles.add(ApiProfile(id = "local", name = "Local", apiKey = "key"))
+        Store.state.activeProfileId = "local"
+        val imported = Store.seed().also {
+            it.profiles = mutableListOf(ApiProfile(id = "backup", name = "Backup"))
+            it.activeProfileId = "backup"
+        }
+        Store.replace(imported)
+        assertTrue(Store.state.profiles.any { it.id == "local" && it.apiKey == "key" })
+        assertTrue(Store.state.profiles.any { it.id == "backup" })
+    }
+
+    @Test
     fun startStoryChatCopiesWorldBookIds() {
         val story = Store.state.stories.first { it.id == "story-first" }
         val original = ArrayList(story.worldBookIds)

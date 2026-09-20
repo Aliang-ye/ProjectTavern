@@ -169,6 +169,14 @@ object Store {
                     p.apiKey = old.apiKey
                 }
             }
+            keys.filter { it.apiKey.isNotBlank() }.forEach { old ->
+                if (state.profiles.none { it.id == old.id || it.name == old.name }) {
+                    state.profiles.add(old.copy())
+                }
+            }
+            if (state.profiles.none { it.id == state.activeProfileId }) {
+                state.activeProfileId = state.profiles.firstOrNull { it.id == active }?.id ?: state.profiles.firstOrNull()?.id
+            }
         }
         migrate()
         if (::appContext.isInitialized) {
@@ -388,8 +396,11 @@ object Store {
             ?: preferredPreset
         val timestamp = now()
         if (characterId.isNullOrBlank() && storyId != null) {
-            val main = state.participants.find { it.storyId == storyId && it.enabled && it.role == "MAIN_CHARACTER" }
-                ?: state.participants.firstOrNull { it.storyId == storyId && it.enabled }
+            val main = state.participants.find {
+                it.storyId == storyId && it.enabled && it.role == "MAIN_CHARACTER" && state.characters.any { c -> c.id == it.characterId }
+            } ?: state.participants.firstOrNull {
+                it.storyId == storyId && it.enabled && state.characters.any { c -> c.id == it.characterId }
+            }
             if (main != null) {
                 return startConversation(main.characterId, storyId, personaId)
             } else {

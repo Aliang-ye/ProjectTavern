@@ -225,6 +225,9 @@ class ChatActivity : AppCompatActivity() {
             return
         }
         if (c.profileId.isNullOrBlank()) c.profileId = profile.id
+        lastFailedAsst = null
+        b.btnRetry.visibility = View.GONE
+        b.err.visibility = View.GONE
         b.etDraft.setText("")
         c.draftText = "" // 发送成功，清空已存草稿
         hideKeyboard()  // 发送后立即收起键盘，让消息列表完整显示
