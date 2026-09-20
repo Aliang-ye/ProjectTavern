@@ -1,21 +1,30 @@
 package com.projecttavern.app
 
-/**
- * Project Tavern - Community Lite Edition
- * Note: Advanced multi-tiered lore orchestration, regex dynamic triggers,
- * and adaptive memory condensation are exclusive to the full release build.
- * See pre-compiled APK in GitHub Releases.
- */
 data class PromptBuilt(
     val messages: List<Pair<String, String>>,
     val debug: String,
 )
 
 object Engine {
-    fun matchEntries(text: String, entries: List<WorldBookEntry>): List<WorldBookEntry> {
-        // [Community Edition] Basic constant entries and primary key matches
+    fun matchEntries(text: String, entries: List<WorldBookEntry>, roll: Boolean = true): List<WorldBookEntry> {
         val src = text.lowercase()
-        return entries.filter { it.enabled && (it.constant || it.keys.any { k -> k.isNotBlank() && src.contains(k.lowercase()) }) }
+        return entries.filter { e ->
+            if (!e.enabled) return@filter false
+            if (e.constant) return@filter passProbability(e, roll)
+            val primary = e.keys.any { k -> k.isNotBlank() && src.contains(k.lowercase()) }
+            if (!primary) return@filter false
+            val secondaryOk = e.secondaryKeys.none { it.isNotBlank() } ||
+                e.secondaryKeys.any { k -> k.isNotBlank() && src.contains(k.lowercase()) }
+            secondaryOk && passProbability(e, roll)
+        }.sortedByDescending { it.priority }
+    }
+
+    private fun passProbability(e: WorldBookEntry, roll: Boolean): Boolean {
+        if (!roll) return true
+        val p = e.probability.coerceIn(0, 100)
+        if (p >= 100) return true
+        if (p <= 0) return false
+        return (1..100).random() <= p
     }
 
     fun lore(w: WorldBook): String {
@@ -44,6 +53,12 @@ object Engine {
         return path.reversed()
     }
 
+    fun siblings(message: ChatMessage): List<ChatMessage> {
+        return Store.state.messages
+            .filter { it.conversationId == message.conversationId && it.parentId == message.parentId && it.role == message.role }
+            .sortedBy { it.createdAt }
+    }
+
     fun display(m: ChatMessage): String {
         val g = m.generations.getOrNull(m.generationIndex) ?: m.generations.firstOrNull()
         return g?.content ?: m.content
@@ -66,21 +81,76 @@ object Engine {
         }
     }
 
+    private fun estimateTokens(text: String): Int {
+        if (text.isEmpty()) return 0
+        var cjk = 0
+        var other = 0
+        for (ch in text) {
+            if (ch.code in 0x2E80..0x9FFF || ch.code in 0xF900..0xFAFF) cjk++ else other++
+        }
+        return cjk + (other + 3) / 4
+    }
+
     private fun trimHistoryForContext(history: List<ChatMessage>, preset: Preset?): List<ChatMessage> {
-        // [Community Edition] Sliding window context trimming. Neural memory summarization is bundled in release APK.
         if (preset == null || preset.contextLimit <= 0) return history
-        val maxChars = preset.contextLimit.coerceAtLeast(4096)
+        val maxTokens = preset.contextLimit.coerceAtLeast(1024)
         if (history.size <= 4) return history
-        // O(N)：从尾部往前累计字符长度，而非每次都 joinToString 整个列表
         var total = 0
         val kept = ArrayDeque<ChatMessage>()
         for (m in history.asReversed()) {
-            val len = (if (m.role == "assistant") display(m) else m.content).length + 1
-            if (total + len > maxChars && kept.size >= 4) break
+            val text = if (m.role == "assistant") display(m) else m.content
+            val tokens = estimateTokens(text) + 8
+            if (total + tokens > maxTokens && kept.size >= 4) break
             kept.addFirst(m)
-            total += len
+            total += tokens
         }
         return kept
+    }
+
+    fun memoryFor(conversationId: String): Memory? {
+        return Store.state.memories.find { it.conversationId == conversationId && it.type == "CHAT_SUMMARY" }
+    }
+
+    fun upsertMemory(conversationId: String, content: String) {
+        val now = Store.now()
+        val existing = memoryFor(conversationId)
+        if (existing != null) {
+            existing.content = content
+            existing.updatedAt = now
+        } else {
+            Store.state.memories.add(Memory(Store.nid(), conversationId, "CHAT_SUMMARY", content, now))
+        }
+        Store.persist()
+    }
+
+    fun shouldSummarize(conversationId: String, tipMessageId: String?): Boolean {
+        if (!Store.state.autoSummary) return false
+        val history = visible(conversationId, tipMessageId)
+        if (history.size < 10) return false
+        val mem = memoryFor(conversationId)
+        val lastId = history.lastOrNull()?.id
+        if (mem != null && mem.updatedAt >= (history.lastOrNull()?.createdAt ?: 0L) - 1000) return false
+        return lastId != null
+    }
+
+    fun summaryPrompt(conversationId: String, tipMessageId: String?): List<Pair<String, String>> {
+        val history = visible(conversationId, tipMessageId).takeLast(16)
+        val prev = memoryFor(conversationId)?.content.orEmpty()
+        val locale = Store.state.locale
+        val instruction = if (locale == "en") {
+            "Summarize this roleplay so far in under 180 words. Keep names, locations, open promises, and the current situation. Do not write new plot."
+        } else {
+            "用不超过 180 字总结目前的角色扮演。保留人名、地点、未兑现的约定和当前处境。不要写新剧情。"
+        }
+        val body = buildString {
+            if (prev.isNotBlank()) append("Previous summary:\n").append(prev).append("\n\n")
+            append("Transcript:\n")
+            history.forEach { m ->
+                val who = if (m.role == "assistant") "Char" else "User"
+                append(who).append(": ").append(if (m.role == "assistant") display(m) else m.content).append("\n")
+            }
+        }
+        return listOf("system" to instruction, "user" to body)
     }
 
     fun build(conversationId: String, tipMessageId: String? = null): PromptBuilt {
@@ -96,14 +166,15 @@ object Engine {
             s.characterWorldBooks.filter { it.characterId == conv.characterId }.map { it.worldBookId }
         }
         val worlds = s.worldBooks.filter { it.id in worldIds }
-        val entries = matchEntries(histText, s.entries.filter { it.worldBookId in worldIds })
+        val entries = matchEntries(histText, s.entries.filter { it.worldBookId in worldIds }, roll = true)
+        val before = entries.filter { it.insertionPosition == "before_char" }
+        val after = entries.filter { it.insertionPosition != "before_char" }
         val lock = if (s.locale == "en") Store.t("lockEn") else Store.t("lockZh")
         val persona = s.personas.find { it.id == conv.personaId }
             ?: s.personas.find { it.id == s.activePersonaId }
             ?: s.personas.firstOrNull()
         val userName = persona?.name?.ifBlank { null } ?: s.userName.ifBlank { if (s.locale == "en") "You" else "你" }
         val userPersona = persona?.description?.ifBlank { null } ?: s.userPersona
-        // 角色名称（用于 {{char}} 宏）
         val charName = ch?.name ?: if (worlds.isNotEmpty()) {
             val w0 = worlds.first()
             w0.willName.ifBlank { if (s.locale == "en") "World Will" else "世界意志" }
@@ -115,8 +186,15 @@ object Engine {
         sys.append("## PERSONA\nThe user is ").append(userName)
         if (userPersona.isNotBlank()) sys.append("\n").append(userPersona)
         sys.append("\n\n")
+        memoryFor(conversationId)?.content?.takeIf { it.isNotBlank() }?.let {
+            sys.append("## MEMORY\n").append(it.trim()).append("\n\n")
+        }
         if (preset != null && preset.systemPrompt.isNotBlank()) {
             sys.append("## SYSTEM\n").append(preset.systemPrompt).append("\n\n")
+        }
+        if (before.isNotEmpty()) {
+            sys.append("## LORE (before character)\n")
+            before.forEach { e -> sys.append("[").append(e.name).append("] ").append(fill(e.content)).append("\n\n") }
         }
         if (ch != null) {
             sys.append("## CHARACTER\nName: ").append(ch.name)
@@ -161,12 +239,14 @@ object Engine {
             }
         }
 
-        // [Community Edition] Standard world lore attachment
         for (w in worlds) {
             val l = lore(w)
             if (l.isNotBlank()) sys.append("## WORLD\n[").append(w.name).append("]\n").append(l).append("\n\n")
         }
-        for (e in entries) sys.append("## ENTRY\n[").append(e.name).append("] ").append(e.content).append("\n\n")
+        if (after.isNotEmpty()) {
+            sys.append("## LORE (after character)\n")
+            after.forEach { e -> sys.append("[").append(e.name).append("] ").append(fill(e.content)).append("\n\n") }
+        }
 
         val messages = mutableListOf("system" to sys.toString().trim())
         for (m in contextHistory) {
@@ -176,7 +256,21 @@ object Engine {
                 messages.add(role to text)
             }
         }
-        val debug = "blocks=${messages.size} worlds=${worlds.size} entries=${entries.size} history=${contextHistory.size}"
+        val debug = buildString {
+            appendLine("blocks=${messages.size} worlds=${worlds.size} entries=${entries.size} history=${contextHistory.size}/${history.size}")
+            appendLine("tokens≈${messages.sumOf { estimateTokens(it.second) }}  memory=${if (memoryFor(conversationId)?.content.isNullOrBlank()) "off" else "on"}")
+            if (entries.isNotEmpty()) {
+                appendLine("injected:")
+                entries.forEach { e ->
+                    append(" • ").append(e.name).append(" [").append(e.insertionPosition).append("] p").append(e.priority)
+                    if (e.constant) append(" constant")
+                    appendLine()
+                }
+            }
+            appendLine()
+            appendLine("----- system -----")
+            append(sys.toString().trim().take(4000))
+        }
         return PromptBuilt(messages, debug)
     }
 }

@@ -40,9 +40,9 @@ class PresetActivity : AppCompatActivity() {
                 locale = Store.state.locale,
                 temperature = 0.8,
                 topP = 0.95,
-                maxTokens = 300,
-                contextLimit = 32000,
-                responseBudget = 300,
+                maxTokens = 700,
+                contextLimit = 24000,
+                responseBudget = 700,
                 systemPrompt = if (isEn) "Vividly advance the story. Never act for {{user}}." else "自然生动地推进剧情，描写动作与环境。不替{{user}}行动。"
             )
             Store.state.presets.add(newP)

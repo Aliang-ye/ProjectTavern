@@ -71,9 +71,11 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/surface"
-        android:maxHeight="140dp"
+        android:maxHeight="180dp"
         android:padding="10dp"
+        android:scrollbars="vertical"
         android:textColor="@color/muted"
+        android:textIsSelectable="true"
         android:textSize="11sp"
         android:visibility="gone" />
 

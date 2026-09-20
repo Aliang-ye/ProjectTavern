@@ -89,7 +89,8 @@ class MainActivity : AppCompatActivity() {
         b.panelStories.fab.setOnClickListener {
             openScreen(StoryActivity::class.java) { it.putExtra("isNew", true) }
         }
-        b.panelChats.fab.visibility = View.GONE
+        b.panelChats.fab.visibility = View.VISIBLE
+        b.panelChats.fab.setOnClickListener { pickNewChat() }
 
         // 顶部统计胶囊点击直接切换至对应面板
         b.statCharacters.setOnClickListener { b.bottomNav.selectedItemId = R.id.nav_characters }
@@ -119,8 +120,95 @@ class MainActivity : AppCompatActivity() {
             searchStoryRunnable = r
             searchHandler.postDelayed(r, 150)
         })
+        var searchChatRunnable: Runnable? = null
+        b.panelChats.search.addTextChangedListener(SimpleWatcher {
+            searchChatRunnable?.let { searchHandler.removeCallbacks(it) }
+            val r = Runnable { refreshChats() }
+            searchChatRunnable = r
+            searchHandler.postDelayed(r, 150)
+        })
         wireSettings()
         show(R.id.nav_characters)
+        maybeShowSetup()
+    }
+
+    private val importAny = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri == null) return@registerForActivityResult
+        kotlin.concurrent.thread {
+            try {
+                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@thread
+                val result = Cards.importBytes(this, bytes)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    when {
+                        result.character != null -> {
+                            refresh()
+                            Toast.makeText(this, "${Store.t("characterImported")}: ${result.character.name}", Toast.LENGTH_SHORT).show()
+                        }
+                        result.world != null -> {
+                            refresh()
+                            Toast.makeText(this, "${Store.t("worldImported")}: ${result.world.name}", Toast.LENGTH_SHORT).show()
+                        }
+                        else -> Toast.makeText(this, Store.t("invalidCharacterJson"), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, e.message ?: Store.t("invalidCharacterJson"), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun maybeShowSetup() {
+        if (Store.state.setupDone) return
+        if (Store.activeProfile()?.apiKey?.isNotBlank() == true) {
+            Store.state.setupDone = true
+            Store.persist()
+            return
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("setupTitle"))
+            .setMessage(Store.t("setupBody"))
+            .setPositiveButton(Store.t("setupGo")) { _, _ ->
+                b.bottomNav.selectedItemId = R.id.nav_settings
+                val p = Store.state.profiles.firstOrNull() ?: ApiProfile(
+                    Store.nid(),
+                    if (Store.state.locale == "en") "OpenAI" else "OpenAI 兼容",
+                    "openai",
+                    "https://api.openai.com/v1",
+                    "gpt-4o-mini",
+                    ""
+                ).also {
+                    Store.state.profiles.add(it)
+                    Store.state.activeProfileId = it.id
+                    Store.persist()
+                }
+                openScreen(ProfileActivity::class.java) { it.putExtra("id", p.id) }
+            }
+            .setNegativeButton(Store.t("setupSkip")) { _, _ ->
+                Store.state.setupDone = true
+                Store.persist()
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun pickNewChat() {
+        val chars = Store.state.characters
+        if (chars.isEmpty()) {
+            Toast.makeText(this, Store.t("emptyCharacters"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val names = chars.map { it.name }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("pickCharacter"))
+            .setItems(names) { _, which ->
+                val id = Store.startConversation(chars[which].id, null) ?: return@setItems
+                openScreen(ChatActivity::class.java) { it.putExtra("id", id) }
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
     }
 
     private var currentNavId: Int = R.id.nav_characters
@@ -183,24 +271,31 @@ class MainActivity : AppCompatActivity() {
         setupPanel(b.panelCharacters, Store.t("characters"), Store.t("privateHint"), true)
         setupPanel(b.panelWorlds, Store.t("worlds"), Store.t("sectionsHint"), true)
         setupPanel(b.panelStories, Store.t("stories"), "", true)
-        setupPanel(b.panelChats, Store.t("chats"), Store.t("privateHint"), false)
+        setupPanel(b.panelChats, Store.t("chats"), Store.t("privateHint"), true)
         b.panelCharacters.search.hint = Store.t("search")
         b.panelWorlds.search.hint = Store.t("search")
         b.panelStories.search.hint = Store.t("search")
+        b.panelChats.search.hint = Store.t("searchChats")
     }
 
     private fun setupPanel(p: PanelListBinding, title: String, hint: String, fab: Boolean) {
         p.panelTitle.text = title
         p.panelHint.text = hint
         p.panelHint.visibility = if (hint.isBlank()) View.GONE else View.VISIBLE
-        p.search.visibility = if (p !== b.panelChats) View.VISIBLE else View.GONE
+        p.search.visibility = View.VISIBLE
         p.fab.visibility = if (fab) View.VISIBLE else View.GONE
-        if (p === b.panelCharacters) {
-            p.panelAction.visibility = View.VISIBLE
-            p.panelAction.text = Store.t("importCharacter")
-            p.panelAction.setOnClickListener { showImportCharacterDialog() }
-        } else {
-            p.panelAction.visibility = View.GONE
+        when {
+            p === b.panelCharacters -> {
+                p.panelAction.visibility = View.VISIBLE
+                p.panelAction.text = Store.t("importCharacter")
+                p.panelAction.setOnClickListener { showImportCharacterDialog() }
+            }
+            p === b.panelWorlds -> {
+                p.panelAction.visibility = View.VISIBLE
+                p.panelAction.text = Store.t("importWorld")
+                p.panelAction.setOnClickListener { importAny.launch("*/*") }
+            }
+            else -> p.panelAction.visibility = View.GONE
         }
     }
 
@@ -226,18 +321,19 @@ class MainActivity : AppCompatActivity() {
                 val json = et.text.toString().trim()
                 if (json.isBlank()) return@setPositiveButton
                 kotlin.concurrent.thread {
-                    val ch = Store.importCharacter(json)
+                    val result = Cards.importJson(this@MainActivity, json)
                     runOnUiThread {
                         if (isFinishing || isDestroyed) return@runOnUiThread
-                        if (ch != null) {
-                            refreshCharacters()
-                            Toast.makeText(this@MainActivity, "${Store.t("characterImported")}: ${ch.name}", Toast.LENGTH_SHORT).show()
+                        if (result.character != null) {
+                            refresh()
+                            Toast.makeText(this@MainActivity, "${Store.t("characterImported")}: ${result.character.name}", Toast.LENGTH_SHORT).show()
                         } else {
                             Toast.makeText(this@MainActivity, Store.t("invalidCharacterJson"), Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
             }
+            .setNeutralButton(Store.t("importFile")) { _, _ -> importAny.launch("*/*") }
             .setNegativeButton(Store.t("cancel"), null)
             .show()
     }
@@ -407,7 +503,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshChats() {
-        val allConvs = Store.state.conversations.sortedWith(compareByDescending<Conversation> { it.isPinned }.thenByDescending { it.updatedAt })
+        val q = b.panelChats.search.text?.toString()?.trim()?.lowercase().orEmpty()
+        val allConvs = Store.state.conversations.filter { c ->
+            if (q.isEmpty()) true
+            else {
+                val titleHit = c.title.lowercase().contains(q)
+                val bodyHit = Store.state.messages.any { m ->
+                    m.conversationId == c.id && (m.content.lowercase().contains(q) || Engine.display(m).lowercase().contains(q))
+                }
+                titleHit || bodyHit
+            }
+        }.sortedWith(compareByDescending<Conversation> { it.isPinned }.thenByDescending { it.updatedAt })
         val displayed = if (allConvs.size > MAX_DISPLAY) allConvs.take(MAX_DISPLAY) else allConvs
         fill(b.panelChats.list) {
             if (displayed.isEmpty()) {
@@ -533,7 +639,7 @@ class MainActivity : AppCompatActivity() {
             refreshSettings()
         }
         s.btnExport.setOnClickListener { exportBackup() }
-        s.btnImport.setOnClickListener { import.launch("application/json") }
+        s.btnImport.setOnClickListener { import.launch("*/*") }
         s.btnReset.setOnClickListener {
             confirm(this, Store.t("resetSeedQ")) {
                 Store.reset()
@@ -667,6 +773,7 @@ class MainActivity : AppCompatActivity() {
         s.valStreaming.text = if (Store.state.streaming) "ON" else "OFF"
         s.labelAutoSummary.text = Store.t("autoSummary")
         s.valAutoSummary.text = if (Store.state.autoSummary) "ON" else "OFF"
+        s.developerHint.text = Store.t("autoSummaryHint") + "\n" + Store.t("developerHint")
         s.labelAdvanced.text = Store.t("advanced")
         s.developerHint.text = Store.t("developerHint")
         s.labelDeveloper.text = Store.t("developerMode")

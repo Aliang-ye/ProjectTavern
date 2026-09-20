@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
+    <!-- LAN models (Ollama / LM Studio) need cleartext; Llm.kt rejects public http:// APIs. -->
     <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

@@ -87,10 +87,17 @@ class CharacterActivity : AppCompatActivity() {
         b.btnExport.setOnClickListener {
             save(commitToStore = !isNew)
             val ch = current()
-            val json = Store.exportCharacter(ch)
-            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-            cm.setPrimaryClip(android.content.ClipData.newPlainText("character", json))
-            android.widget.Toast.makeText(this, Store.t("copied"), android.widget.Toast.LENGTH_SHORT).show()
+            val opts = arrayOf(Store.t("exportCharacter"), Store.t("exportPng"))
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setItems(opts) { _, which ->
+                    if (which == 1) exportCharacterPng() else {
+                        val json = Cards.exportCharacterV2Json(ch)
+                        val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("character", json))
+                        android.widget.Toast.makeText(this, Store.t("copied"), android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .show()
         }
         b.btnDup.setOnClickListener {
             save(commitToStore = !isNew)
@@ -214,7 +221,7 @@ class CharacterActivity : AppCompatActivity() {
 
     private fun exportCharacterJson() {
         val c = Store.state.characters.find { it.id == id } ?: draftCharacter
-        val json = Store.exportCharacter(c)
+        val json = Cards.exportCharacterV2Json(c)
         val safeName = (c.name.ifBlank { "character" }).replace(Regex("[^\\w\\u4e00-\\u9fff]"), "_")
         val file = java.io.File(cacheDir, "$safeName.json")
         file.writeText(json)
@@ -224,5 +231,26 @@ class CharacterActivity : AppCompatActivity() {
             .putExtra(android.content.Intent.EXTRA_STREAM, uri)
             .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         startActivity(android.content.Intent.createChooser(share, Store.t("exportCharacter")))
+    }
+
+    private fun exportCharacterPng() {
+        val c = Store.state.characters.find { it.id == id } ?: draftCharacter
+        kotlin.concurrent.thread {
+            try {
+                val file = Cards.exportCharacterPng(this, c)
+                val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", file)
+                runOnUiThread {
+                    val share = android.content.Intent(android.content.Intent.ACTION_SEND)
+                        .setType("image/png")
+                        .putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                        .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    startActivity(android.content.Intent.createChooser(share, Store.t("exportPng")))
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    android.widget.Toast.makeText(this, e.message ?: Store.t("error"), android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 }

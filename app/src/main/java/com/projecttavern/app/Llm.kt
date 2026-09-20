@@ -25,9 +25,11 @@ object Llm {
         messages: List<Pair<String, String>>,
         preset: Preset,
         onDelta: (String) -> Unit,
+        streaming: Boolean = Store.state.streaming,
     ): String {
-        return if (profile.provider == "claude") streamClaude(profile, messages, preset, onDelta)
-        else streamOpenAI(profile, messages, preset, onDelta)
+        assertSafeUrl(if (profile.provider == "claude") claudeUrl(profile) else openaiUrl(profile))
+        return if (profile.provider == "claude") streamClaude(profile, messages, preset, onDelta, streaming)
+        else streamOpenAI(profile, messages, preset, onDelta, streaming)
     }
 
     fun testConnection(p: ApiProfile): Pair<Boolean, String> {
@@ -37,6 +39,7 @@ object Llm {
         }
         val startTime = System.currentTimeMillis()
         try {
+            assertSafeUrl(if (p.provider == "claude") claudeUrl(p) else openaiUrl(p))
             val req = if (p.provider == "claude") {
                 val body = JSONObject()
                     .put("model", p.model.trim().ifBlank { "claude-3-haiku-20240307" })
@@ -89,10 +92,34 @@ object Llm {
         val raw = (p.endpoint.ifBlank { "https://api.openai.com/v1" }).trimEnd('/')
         return when {
             raw.endsWith("/chat/completions") -> raw
+            raw.contains("generativelanguage.googleapis.com") -> "$raw/chat/completions"
             raw.endsWith("/v1") || raw.endsWith("/v2") || raw.endsWith("/v3") || raw.endsWith("/v4") -> "$raw/chat/completions"
             raw.contains("/v1/") || raw.contains("/v2/") || raw.contains("/v3/") || raw.contains("/v4/") -> "$raw/chat/completions"
             else -> "$raw/v1/chat/completions"
         }
+    }
+
+    private fun assertSafeUrl(url: String) {
+        val uri = try { java.net.URI(url) } catch (_: Exception) { return }
+        if (uri.scheme != "http") return
+        val host = uri.host ?: return
+        if (!isPrivateHost(host)) {
+            throw RuntimeException(if (Store.state.locale == "en") "HTTP is only allowed for LAN / localhost. Use HTTPS for public APIs." else "公网接口必须使用 HTTPS。明文 HTTP 仅允许局域网 / localhost。")
+        }
+    }
+
+    private fun isPrivateHost(host: String): Boolean {
+        val h = host.lowercase().trim('.')
+        if (h == "localhost" || h.endsWith(".local")) return true
+        val parts = h.split('.')
+        if (parts.size == 4 && parts.all { it.toIntOrNull() != null }) {
+            val a = parts[0].toInt(); val b = parts[1].toInt()
+            if (a == 10) return true
+            if (a == 127) return true
+            if (a == 192 && b == 168) return true
+            if (a == 172 && b in 16..31) return true
+        }
+        return false
     }
 
     private fun claudeUrl(p: ApiProfile): String {
@@ -109,6 +136,7 @@ object Llm {
         messages: List<Pair<String, String>>,
         preset: Preset,
         onDelta: (String) -> Unit,
+        streaming: Boolean,
     ): String {
         val apiKey = p.apiKey.replace("\r", "").replace("\n", "").trim()
         require(apiKey.isNotBlank()) { "OpenAI API key is required" }
@@ -119,26 +147,31 @@ object Llm {
         }
         if (arr.length() == 0) return ""
         val effectiveMaxTokens = if (preset.responseBudget > 0) minOf(preset.maxTokens, preset.responseBudget) else preset.maxTokens
+        val url = openaiUrl(p)
         val body = JSONObject()
             .put("model", p.model.trim())
-            .put("stream", true)
+            .put("stream", streaming)
             .put("temperature", preset.temperature)
             .put("top_p", preset.topP)
             .put("max_tokens", effectiveMaxTokens)
             .put("messages", arr)
             .toString()
         val req = Request.Builder()
-            .url(openaiUrl(p))
+            .url(url)
             .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Content-Type", "application/json")
             .post(body.toRequestBody("application/json".toMediaType()))
             .build()
-        return readSse(req, onDelta) { json ->
-            val choice = json.optJSONArray("choices")?.optJSONObject(0)
-            val delta = choice?.optJSONObject("delta")
-            delta?.optString("content")?.ifEmpty { null }
-                ?: choice?.optString("text")?.ifEmpty { null }
-                ?: ""
+        return if (streaming) {
+            readSse(req, onDelta) { json ->
+                val choice = json.optJSONArray("choices")?.optJSONObject(0)
+                val delta = choice?.optJSONObject("delta")
+                delta?.optString("content")?.ifEmpty { null }
+                    ?: choice?.optString("text")?.ifEmpty { null }
+                    ?: ""
+            }
+        } else {
+            completeOnce(req, onDelta)
         }
     }
 
@@ -147,6 +180,7 @@ object Llm {
         messages: List<Pair<String, String>>,
         preset: Preset,
         onDelta: (String) -> Unit,
+        streaming: Boolean,
     ): String {
         val apiKey = p.apiKey.replace("\r", "").replace("\n", "").trim()
         require(apiKey.isNotBlank()) { "Claude API key is required" }
@@ -173,7 +207,7 @@ object Llm {
         val effectiveMaxTokens = if (preset.responseBudget > 0) minOf(preset.maxTokens, preset.responseBudget) else preset.maxTokens
         val body = JSONObject()
             .put("model", p.model.trim())
-            .put("stream", true)
+            .put("stream", streaming)
             .put("temperature", preset.temperature)
             .put("top_p", preset.topP)
             .put("max_tokens", effectiveMaxTokens)
@@ -186,11 +220,33 @@ object Llm {
             .addHeader("Content-Type", "application/json")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
-        return readSse(req, onDelta) { json ->
-            if (json.optString("type") == "content_block_delta") {
-                json.optJSONObject("delta")?.optString("text").orEmpty()
-            } else json.optJSONObject("delta")?.optString("text").orEmpty()
+        return if (streaming) {
+            readSse(req, onDelta) { json ->
+                if (json.optString("type") == "content_block_delta") {
+                    json.optJSONObject("delta")?.optString("text").orEmpty()
+                } else json.optJSONObject("delta")?.optString("text").orEmpty()
+            }
+        } else {
+            completeOnce(req, onDelta)
         }
+    }
+
+    private fun completeOnce(req: Request, onDelta: (String) -> Unit): String {
+        val call = client.newCall(req)
+        currentCall = call
+        val res = call.execute()
+        val body = res.body?.string().orEmpty()
+        res.close()
+        currentCall = null
+        if (!res.isSuccessful) throw RuntimeException(mapStatus(res.code, body))
+        val json = JSONObject(body)
+        val text = json.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
+            ?: json.optJSONArray("content")?.optJSONObject(0)?.optString("text")
+            ?: json.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")
+            ?: ""
+        if (text.isBlank()) throw RuntimeException(if (Store.state.locale == "en") "Model returned no text output" else "模型未返回任何有效文本")
+        onDelta(text)
+        return text
     }
 
     private fun readSse(req: Request, onDelta: (String) -> Unit, pick: (JSONObject) -> String): String {

@@ -54,11 +54,12 @@ class ProfileActivity : AppCompatActivity() {
         }
         b.chipOllama.setOnClickListener {
             setProvider("openai")
-            b.etEndpoint.setText("http://10.0.2.2:11434/v1")
+            b.etEndpoint.setText("http://192.168.1.8:11434/v1")
             b.etModel.setText("qwen2.5:7b")
             if (b.etName.text.isNullOrBlank() || b.etName.text.toString().startsWith("Profile")) {
                 b.etName.setText("Ollama")
             }
+            android.widget.Toast.makeText(this, Store.t("ollamaHint"), android.widget.Toast.LENGTH_LONG).show()
         }
         b.chipOpenai.setOnClickListener {
             setProvider("openai")
@@ -67,6 +68,19 @@ class ProfileActivity : AppCompatActivity() {
             if (b.etName.text.isNullOrBlank() || b.etName.text.toString().startsWith("Profile")) {
                 b.etName.setText("OpenAI")
             }
+        }
+        b.chipGemini.setOnClickListener {
+            setProvider("openai")
+            b.etEndpoint.setText("https://generativelanguage.googleapis.com/v1beta/openai")
+            b.etModel.setText("gemini-2.0-flash")
+            if (b.etName.text.isNullOrBlank() || b.etName.text.toString().startsWith("Profile")) {
+                b.etName.setText("Gemini")
+            }
+            android.widget.Toast.makeText(this, Store.t("geminiHint"), android.widget.Toast.LENGTH_LONG).show()
+        }
+        b.chipOllama.setOnLongClickListener {
+            android.widget.Toast.makeText(this, Store.t("ollamaHint"), android.widget.Toast.LENGTH_LONG).show()
+            true
         }
         b.btnPasteKey.setOnClickListener {
             val cm = getSystemService(CLIPBOARD_SERVICE) as? android.content.ClipboardManager
@@ -166,6 +180,7 @@ class ProfileActivity : AppCompatActivity() {
         }
         p.apiKey = b.etKey.text.toString().replace("\r", "").replace("\n", "").trim()
         Store.state.activeProfileId = p.id
+        if (p.apiKey.isNotBlank()) Store.state.setupDone = true
         Store.persist()
     }
 }

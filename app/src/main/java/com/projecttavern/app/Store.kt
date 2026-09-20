@@ -8,7 +8,7 @@ import java.util.UUID
 
 object Store {
     private const val FILE = "tavern.json"
-    private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
+    val gson: Gson = GsonBuilder().setPrettyPrinting().create()
     lateinit var state: TavernState
         private set
     private lateinit var file: File
@@ -38,6 +38,7 @@ object Store {
             state.appearance = "dark"
         }
         migrate()
+        hydrateKeys()
         persist()
     }
 
@@ -73,10 +74,14 @@ object Store {
                 conversations = ArrayList(state.conversations),
                 messages = ArrayList(state.messages),
                 presets = ArrayList(state.presets),
-                profiles = ArrayList(state.profiles),
+                profiles = ArrayList(state.profiles.map { it.copy() }),
                 personas = ArrayList(state.personas),
                 memories = ArrayList(state.memories)
             )
+        }
+        snapshot.profiles.forEach { it.apiKey = "" }
+        if (::appContext.isInitialized) {
+            state.profiles.forEach { p -> Secrets.save(appContext, p.id, p.apiKey) }
         }
         ioExecutor.execute {
             try {
@@ -87,6 +92,27 @@ object Store {
             } catch (_: Exception) {}
         }
         listeners.forEach { it() }
+    }
+
+    fun hydrateKeys() {
+        if (!::appContext.isInitialized) return
+        state.profiles.forEach { p ->
+            val stored = Secrets.get(appContext, p.id)
+            if (stored.isNotBlank()) p.apiKey = stored
+        }
+    }
+
+    fun materializeDataUrl(ctx: Context, dataUrl: String, stem: String): String? {
+        return try {
+            val comma = dataUrl.indexOf(",")
+            if (comma == -1) return null
+            val b64 = dataUrl.substring(comma + 1)
+            val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+            val dir = File(ctx.filesDir, "avatars").apply { mkdirs() }
+            val dest = File(dir, "${stem}_${System.currentTimeMillis()}.jpg")
+            dest.writeBytes(bytes)
+            dest.absolutePath
+        } catch (_: Exception) { null }
     }
 
     fun setLocale(locale: String) {
@@ -122,10 +148,36 @@ object Store {
             }
         }
         migrate()
+        if (::appContext.isInitialized) {
+            fun land(path: String?, stem: String): String? {
+                if (path.isNullOrBlank()) return path
+                if (path.startsWith("data:")) return materializeDataUrl(appContext, path, stem) ?: path
+                return path
+            }
+            state.characters.forEach { it.avatar = land(it.avatar, "avatar_${it.id}") }
+            state.worldBooks.forEach { it.willAvatar = land(it.willAvatar, "will_${it.id}") }
+            state.personas.forEach { it.avatar = land(it.avatar, "persona_${it.id}") }
+        }
         persist()
     }
 
-    fun backupJson(): String = gson.toJson(redactedStateForWrite())
+    fun backupJson(): String {
+        val copy = redactedStateForWrite()
+        fun embed(path: String?): String? {
+            if (path.isNullOrBlank()) return path
+            if (path.startsWith("data:") || path.startsWith("http")) return path
+            return try {
+                val f = File(path)
+                if (!f.exists()) return path
+                val bytes = f.readBytes()
+                "data:image/jpeg;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            } catch (_: Exception) { path }
+        }
+        copy.characters.forEach { it.avatar = embed(it.avatar) }
+        copy.worldBooks.forEach { it.willAvatar = embed(it.willAvatar) }
+        copy.personas.forEach { it.avatar = embed(it.avatar) }
+        return gson.toJson(copy)
+    }
 
     fun exportCharacter(ch: Character): String {
         val copy = ch.copy(
@@ -179,16 +231,7 @@ object Store {
                 ch.alternateGreetings = ch.alternateGreetings ?: mutableListOf()
                 // 如果头像为嵌入式 Base64，落地为本地图片文件，确保跨设备导入头像不丢失
                 if (ch.avatar?.startsWith("data:") == true && ::appContext.isInitialized) {
-                    try {
-                        val comma = ch.avatar!!.indexOf(",")
-                        if (comma != -1) {
-                            val b64 = ch.avatar!!.substring(comma + 1)
-                            val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-                            val targetFile = File(appContext.filesDir, "avatar_${ch.id}.jpg")
-                            targetFile.writeBytes(bytes)
-                            ch.avatar = targetFile.absolutePath
-                        }
-                    } catch (_: Exception) {}
+                    ch.avatar = materializeDataUrl(appContext, ch.avatar!!, "avatar_${ch.id}") ?: ch.avatar
                 }
                 state.characters.add(0, ch)
                 persist()
@@ -200,6 +243,12 @@ object Store {
     }
 
     fun activeProfile(): ApiProfile? = state.profiles.find { it.id == state.activeProfileId }
+
+    fun profileFor(conv: Conversation?): ApiProfile? {
+        val id = conv?.profileId
+        if (!id.isNullOrBlank()) state.profiles.find { it.id == id }?.let { return it }
+        return activeProfile()
+    }
 
     fun localePresets() = state.presets.filter { it.locale == state.locale }
 
@@ -225,6 +274,7 @@ object Store {
             worldBookIds = mutableListOf(w.id),
             presetId = state.presets.firstOrNull { it.locale == state.locale }?.id ?: state.presets.firstOrNull()?.id ?: "preset-default",
             personaId = state.activePersonaId,
+            profileId = state.activeProfileId,
             title = "${w.name} · $willName",
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -278,6 +328,7 @@ object Store {
                     worldBookIds = story?.worldBookIds ?: mutableListOf(),
                     presetId = effectivePresetId,
                     personaId = personaId ?: story?.personaId ?: state.activePersonaId,
+                    profileId = state.activeProfileId,
                     title = "${story?.name ?: "Story"} · $willName",
                     createdAt = timestamp,
                     updatedAt = timestamp,
@@ -323,6 +374,7 @@ object Store {
             worldBookIds = worlds,
             presetId = effectivePresetId,
             personaId = personaId ?: story?.personaId ?: state.activePersonaId,
+            profileId = state.activeProfileId,
             title = if (story != null) "${story.name} · ${ch.name}" else ch.name,
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -389,16 +441,7 @@ object Store {
             if (it.generations == null) it.generations = mutableListOf()
         }
 
-        val hasLegacyPresets = state.presets.any { it.id == "preset-novel" || it.id == "preset-creative" }
-        if (hasLegacyPresets) {
-            state.presets.removeAll { it.id.startsWith("preset-novel") || it.id.startsWith("preset-creative") || it.id.startsWith("preset-fast") || it.id.startsWith("preset-reason") }
-        }
-        if (state.presets.none { it.id == "preset-default" }) {
-            state.presets.add(0, Preset("preset-default", "默认模式", "zh", 0.8, 0.95, 300, 32000, 300, "自然生动地推进剧情，描写动作、光线、气味与停顿。不替用户行动。一次回复控制在 150–300 字左右。"))
-        }
-        if (state.presets.none { it.id == "preset-default-en" }) {
-            state.presets.add(Preset("preset-default-en", "Default", "en", 0.8, 0.95, 300, 32000, 300, "Vividly and naturally advance the story with immersive prose. Never act for {{user}}."))
-        }
+        ensureBuiltinPresets()
         state.conversations.forEach { c ->
             if (state.presets.none { it.id == c.presetId }) {
                 c.presetId = if (state.locale == "en") "preset-default-en" else "preset-default"
@@ -445,7 +488,30 @@ object Store {
         state.presets.forEach { if (it.locale.isBlank()) it.locale = "zh" }
         if (state.locale != "en") state.locale = "zh"
         if (state.appearance !in listOf("dark", "light", "system")) state.appearance = "dark"
+        if (state.profiles.any { it.apiKey.isNotBlank() }) state.setupDone = true
         applyAppearance()
+    }
+
+    private fun ensureBuiltinPresets() {
+        fun addIfMissing(id: String, name: String, locale: String, temp: Double, max: Int, budget: Int, prompt: String) {
+            if (state.presets.none { it.id == id }) {
+                state.presets.add(Preset(id, name, locale, temp, 0.95, max, 24000, budget, prompt))
+            }
+        }
+        addIfMissing("preset-novel", "小说模式", "zh", 0.9, 900, 900, "第三人称有限视角。写动作、光线、气味与停顿。不替 {{user}} 行动。一次写完整场景。")
+        addIfMissing("preset-creative", "创意模式", "zh", 1.05, 900, 900, "意象更密，仍保持角色声音。允许比喻与感官细节，不替 {{user}} 行动。")
+        addIfMissing("preset-fast", "快速模式", "zh", 0.8, 400, 400, "短句、多对话。节奏快，一次回复控制在几轮对白内。不替 {{user}} 行动。")
+        addIfMissing("preset-reason", "推理模式", "zh", 0.6, 900, 900, "先在内心核对设定与前文，再写正文。不要把思考过程写出来。不替 {{user}} 行动。")
+        addIfMissing("preset-novel-en", "Novel", "en", 0.9, 900, 900, "Limited third person. Write action, light, scent and pauses. Never act for {{user}}.")
+        addIfMissing("preset-creative-en", "Creative", "en", 1.05, 900, 900, "Denser imagery while keeping the character's voice. Never act for {{user}}.")
+        addIfMissing("preset-fast-en", "Fast", "en", 0.8, 400, 400, "Short lines, lots of dialogue. Never act for {{user}}.")
+        addIfMissing("preset-reason-en", "Reasoning", "en", 0.6, 900, 900, "Silently check canon, then write. Do not show the reasoning. Never act for {{user}}.")
+        if (state.presets.none { it.id == "preset-default" }) {
+            state.presets.add(0, Preset("preset-default", "默认模式", "zh", 0.85, 0.95, 700, 24000, 700, "自然生动地推进剧情。不替用户行动。"))
+        }
+        if (state.presets.none { it.id == "preset-default-en" }) {
+            state.presets.add(Preset("preset-default-en", "Default", "en", 0.85, 0.95, 700, 24000, 700, "Vividly advance the story. Never act for {{user}}."))
+        }
     }
 
     fun applyAppearance() {
@@ -548,16 +614,25 @@ object Store {
                     mutableListOf(Generation("gen-greet", alice.firstMessage, "greeting", "local", t0)), 0, t0),
             ),
             presets = mutableListOf(
-                Preset("preset-default", "默认模式", "zh", 0.8, 0.95, 300, 32000, 300, "自然生动地推进剧情，描写动作、光线、气味与停顿。不替用户行动。一次回复控制在 150–300 字左右。"),
-                Preset("preset-default-en", "Default", "en", 0.8, 0.95, 300, 32000, 300, "Vividly and naturally advance the story with immersive prose. Never act for {{user}}."),
+                Preset("preset-novel", "小说模式", "zh", 0.9, 0.95, 900, 24000, 900, "第三人称有限视角。写动作、光线、气味与停顿。不替 {{user}} 行动。一次写完整场景。"),
+                Preset("preset-creative", "创意模式", "zh", 1.05, 0.95, 900, 24000, 900, "意象更密，仍保持角色声音。不替 {{user}} 行动。"),
+                Preset("preset-fast", "快速模式", "zh", 0.8, 0.95, 400, 24000, 400, "短句、多对话。不替 {{user}} 行动。"),
+                Preset("preset-reason", "推理模式", "zh", 0.6, 0.95, 900, 24000, 900, "先核对设定再写正文，不把思考过程写出来。不替 {{user}} 行动。"),
+                Preset("preset-novel-en", "Novel", "en", 0.9, 0.95, 900, 24000, 900, "Limited third person. Never act for {{user}}."),
+                Preset("preset-creative-en", "Creative", "en", 1.05, 0.95, 900, 24000, 900, "Denser imagery. Never act for {{user}}."),
+                Preset("preset-fast-en", "Fast", "en", 0.8, 0.95, 400, 24000, 400, "Short lines, lots of dialogue. Never act for {{user}}."),
+                Preset("preset-reason-en", "Reasoning", "en", 0.6, 0.95, 900, 24000, 900, "Check canon silently, then write. Never act for {{user}}."),
+                Preset("preset-default", "默认模式", "zh", 0.85, 0.95, 700, 24000, 700, "自然生动地推进剧情。不替用户行动。"),
+                Preset("preset-default-en", "Default", "en", 0.85, 0.95, 700, 24000, 700, "Vividly advance the story. Never act for {{user}}."),
             ),
             locale = "zh",
             appearance = "dark",
             userName = "你",
             userPersona = "一个走进暮色酒馆的旅人。话不多，观察入微。",
             streaming = true,
-            autoSummary = false,
+            autoSummary = true,
             developerMode = false,
+            setupDone = false,
         )
     }
 }

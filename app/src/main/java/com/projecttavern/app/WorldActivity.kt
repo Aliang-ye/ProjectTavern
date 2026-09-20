@@ -76,6 +76,11 @@ class WorldActivity : AppCompatActivity() {
                 startActivity(Intent(this, EntryTestActivity::class.java).putExtra("id", id))
             }
         }
+        b.btnTest.setOnLongClickListener {
+            save(commitToStore = !isNew)
+            if (!isNew) exportWorld()
+            true
+        }
         b.btnAddEntry.setOnClickListener { editEntry(null) }
         b.btnDelete.setOnClickListener {
             if (isNew) {
@@ -246,7 +251,10 @@ class WorldActivity : AppCompatActivity() {
         b.entryList.removeAllViews()
         val entries = if (isNew) draftEntries else Store.state.entries.filter { it.worldBookId == id }
         entries.sortedByDescending { it.priority }.forEach { e ->
-            val meta = if (e.constant) "★ ${Store.t("constant")}" else "p${e.priority}"
+            val meta = buildString {
+                if (e.constant) append("★ ${Store.t("constant")}") else append("p${e.priority}")
+                if (e.probability < 100) append(" ${e.probability}%")
+            }
             val sub = if (e.constant) "${Store.t("constantHint")} · ${e.content.take(30)}" else e.keys.joinToString(", ").ifBlank { "—" }
             inflateRow(b.entryList, e.name, sub, meta) {
                 editEntry(e)
@@ -271,6 +279,9 @@ class WorldActivity : AppCompatActivity() {
         }
         val name = field(Store.t("name"), e.name)
         val keysEt = field(Store.t("tags"), e.keys.joinToString(","))
+        val secondaryEt = field(Store.t("secondaryKeys"), e.secondaryKeys.joinToString(","))
+        val probabilityEt = field(Store.t("probability"), e.probability.toString())
+        val positionEt = field(Store.t("insertPos"), e.insertionPosition)
         val cbConstant = CheckBox(this).apply {
             text = Store.t("constantEntry")
             isChecked = e.constant
@@ -287,6 +298,9 @@ class WorldActivity : AppCompatActivity() {
             .setPositiveButton(Store.t("save")) { _, _ ->
                 e.name = name.text.toString()
                 e.keys = keysEt.text.toString().split(Regex("[,，;；\\s]+")).map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                e.secondaryKeys = secondaryEt.text.toString().split(Regex("[,，;；\\s]+")).map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                e.probability = probabilityEt.text.toString().toIntOrNull()?.coerceIn(0, 100) ?: 100
+                e.insertionPosition = if (positionEt.text.toString().contains("before")) "before_char" else "after_char"
                 e.constant = cbConstant.isChecked
                 e.content = content.text.toString()
                 if (isNew) {
@@ -336,5 +350,19 @@ class WorldActivity : AppCompatActivity() {
             }
             Store.persist()
         }
+    }
+
+    private fun exportWorld() {
+        val w = Store.state.worldBooks.find { it.id == id } ?: current()
+        val json = Cards.exportWorldPack(w)
+        val safe = (w.name.ifBlank { "world" }).replace(Regex("[^\\w\\u4e00-\\u9fff]"), "_")
+        val file = java.io.File(cacheDir, "$safe.world.json")
+        file.writeText(json)
+        val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", file)
+        val share = Intent(Intent.ACTION_SEND)
+            .setType("application/json")
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        startActivity(Intent.createChooser(share, Store.t("exportWorld")))
     }
 }

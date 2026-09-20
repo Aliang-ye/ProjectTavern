@@ -67,7 +67,10 @@ class ChatActivity : AppCompatActivity() {
         b.btnDebug.setOnClickListener {
             debugOn = !debugOn
             b.debugBox.visibility = if (debugOn) View.VISIBLE else View.GONE
-            if (debugOn) b.debugBox.text = Engine.build(convId).debug
+            if (debugOn) {
+                b.debugBox.text = Engine.build(convId).debug
+                b.debugBox.movementMethod = android.text.method.ScrollingMovementMethod.getInstance()
+            }
         }
         b.btnSend.setOnLongClickListener {
             if (busy) stop()
@@ -91,7 +94,7 @@ class ChatActivity : AppCompatActivity() {
                 // 取上一条 user 消息触发重新生成
                 val parentUserMsg = Store.state.messages.find { it.id == failed.parentId }
                 if (parentUserMsg != null) {
-                    val profile = Store.activeProfile() ?: return@setOnClickListener
+                    val profile = Store.profileFor(conv()) ?: return@setOnClickListener
                     val gen = Generation(Store.nid(), "", profile.model, profile.provider, Store.now())
                     val newAsst = ChatMessage(Store.nid(), convId, parentUserMsg.id, "assistant", "", mutableListOf(gen), 0, Store.now())
                     Store.state.messages.add(newAsst)
@@ -202,11 +205,12 @@ class ChatActivity : AppCompatActivity() {
         val text = b.etDraft.text.toString().trim()
         if (text.isEmpty() || busy) return
         val c = conv() ?: return
-        val profile = Store.activeProfile()
+        val profile = Store.profileFor(c)
         if (profile == null || profile.apiKey.isBlank()) {
             toast(Store.t("needProfile"))
             return
         }
+        if (c.profileId.isNullOrBlank()) c.profileId = profile.id
         b.etDraft.setText("")
         c.draftText = "" // 发送成功，清空已存草稿
         hideKeyboard()  // 发送后立即收起键盘，让消息列表完整显示
@@ -225,7 +229,7 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun generate(asst: ChatMessage, fallbackTipId: String? = null) {
-        val profile = Store.activeProfile()
+        val profile = Store.profileFor(conv())
         if (profile == null || profile.apiKey.isBlank()) {
             busy = false
             paintSend()
@@ -248,13 +252,11 @@ class ChatActivity : AppCompatActivity() {
         thread {
             try {
                 val built = Engine.build(convId, fallbackTipId ?: asst.parentId)
-                val full = Llm.stream(profile, built.messages, preset) { piece ->
+                val full = Llm.stream(profile, built.messages, preset, { piece ->
                     if (!Store.state.streaming) return@stream
-                    // 将 token 写入内存，但不立即刷新 UI
                     val g = asst.generations.getOrNull(asst.generationIndex) ?: return@stream
                     g.content += piece
                     asst.content = g.content
-                    // 节流：60ms 内只派发一次 UI 刷新
                     if (!throttlePending) {
                         throttlePending = true
                         uiHandler.postDelayed({
@@ -263,12 +265,11 @@ class ChatActivity : AppCompatActivity() {
                             val lastIdx = adapter.items.lastIndex
                             if (lastIdx >= 0) {
                                 adapter.notifyItemChanged(lastIdx, Unit)
-                                // 只有当用户本身在底部时才自动滚动，不干扰用户翻历史
                                 if (userAtBottom) b.messages.scrollToPosition(lastIdx)
                             }
                         }, 60)
                     }
-                }
+                }, Store.state.streaming)
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     val g = asst.generations[asst.generationIndex]
@@ -282,6 +283,7 @@ class ChatActivity : AppCompatActivity() {
                     if (userAtBottom && adapter.itemCount > 0) {
                         b.messages.scrollToPosition(adapter.itemCount - 1)
                     }
+                    maybeSummarize()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -313,7 +315,7 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun regenerate(m: ChatMessage) {
-        val profile = Store.activeProfile()
+        val profile = Store.profileFor(conv())
         if (profile == null || profile.apiKey.isBlank()) {
             toast(Store.t("needProfile"))
             return
@@ -334,7 +336,7 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun continueGenerate(asst: ChatMessage) {
-        val profile = Store.activeProfile()
+        val profile = Store.profileFor(conv())
         if (profile == null || profile.apiKey.isBlank()) {
             toast(Store.t("needProfile"))
             return
@@ -356,9 +358,8 @@ class ChatActivity : AppCompatActivity() {
         messages.add("user" to continuePrompt)
         thread {
             try {
-                val full = Llm.stream(profile, messages, preset) { piece ->
+                val full = Llm.stream(profile, messages, preset, { piece ->
                     if (!Store.state.streaming) return@stream
-                    // 使用与 generate() 相同的节流机制，避免高速模型续写时卡顿
                     val g = asst.generations.getOrNull(asst.generationIndex)
                     if (g != null) {
                         g.content += piece
@@ -378,7 +379,7 @@ class ChatActivity : AppCompatActivity() {
                             }
                         }, 60)
                     }
-                }
+                }, Store.state.streaming)
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     val g = asst.generations.getOrNull(asst.generationIndex)
@@ -440,6 +441,90 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
+
+    private fun maybeSummarize() {
+        if (!Engine.shouldSummarize(convId, conv()?.tipMessageId)) return
+        val profile = Store.profileFor(conv()) ?: return
+        val preset = Store.state.presets.find { it.id == conv()?.presetId } ?: Store.localePresets().firstOrNull() ?: return
+        val prompt = Engine.summaryPrompt(convId, conv()?.tipMessageId)
+        thread {
+            try {
+                val text = Llm.stream(profile, prompt, preset.copy(maxTokens = 280, responseBudget = 280), {}, false)
+                runOnUiThread {
+                    if (text.isNotBlank()) {
+                        Engine.upsertMemory(convId, text.trim())
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun forkFrom(m: ChatMessage) {
+        val copy = ChatMessage(
+            id = Store.nid(),
+            conversationId = convId,
+            parentId = m.parentId,
+            role = m.role,
+            content = if (m.role == "assistant") Engine.display(m) else m.content,
+            generations = m.generations.map { it.copy(id = Store.nid()) }.toMutableList(),
+            generationIndex = m.generationIndex,
+            createdAt = Store.now(),
+        )
+        Store.state.messages.add(copy)
+        conv()?.tipMessageId = copy.id
+        conv()?.updatedAt = Store.now()
+        Store.persist()
+        refresh()
+        toast(Store.t("forked"))
+    }
+
+    private fun showMessageMenu(m: ChatMessage) {
+        val labels = mutableListOf<String>()
+        val acts = mutableListOf<() -> Unit>()
+        fun add(label: String, act: () -> Unit) { labels.add(label); acts.add(act) }
+        add(Store.t("copy")) {
+            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val text = if (m.role == "assistant") Engine.display(m) else m.content
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("t", text))
+            toast(Store.t("copied"))
+        }
+        add(Store.t("edit")) { showEditMessageDialog(m) }
+        add(Store.t("fork")) { forkFrom(m) }
+        if (m.role == "assistant") {
+            add(Store.t("continueChat")) { continueGenerate(m) }
+            add(Store.t("regenerate")) { regenerate(m) }
+            if (m.generations.size > 1) {
+                add("${m.generationIndex + 1}/${m.generations.size}") {
+                    m.generationIndex = (m.generationIndex + 1) % m.generations.size
+                    m.content = Engine.display(m)
+                    Store.persist()
+                    refresh()
+                }
+            }
+        }
+        val sibs = Engine.siblings(m)
+        if (sibs.size > 1) {
+            val idx = sibs.indexOfFirst { it.id == m.id }.coerceAtLeast(0)
+            add("${Store.t("branchIndex")} ${idx + 1}/${sibs.size}") {
+                val next = sibs[(idx + 1) % sibs.size]
+                conv()?.tipMessageId = next.id
+                Store.persist()
+                refresh()
+            }
+        }
+        add(Store.t("delete")) {
+            confirm(this, Store.t("deleteQ")) {
+                Store.state.messages.filter { it.parentId == m.id }.forEach { it.parentId = m.parentId }
+                Store.state.messages.removeAll { it.id == m.id }
+                if (conv()?.tipMessageId == m.id) conv()?.tipMessageId = m.parentId
+                Store.persist()
+                refresh()
+            }
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setItems(labels.toTypedArray()) { _, which -> acts[which]() }
+            .show()
+    }
 
     private fun showConversationOptionsDialog() {
         val opts = arrayOf(Store.t("renameConversation"), Store.t("exportChat"))
@@ -552,7 +637,6 @@ class ChatActivity : AppCompatActivity() {
             actions.removeAllViews()
             if (m.role == "assistant") {
                 actions.gravity = android.view.Gravity.START
-                user.setOnLongClickListener(null)
                 nameRow.visibility = View.VISIBLE
                 val avatarTv = h.v.findViewById<TextView>(R.id.avatar)
                 val avatarImg = h.v.findViewById<ImageView>(R.id.avatarImg)
@@ -562,17 +646,8 @@ class ChatActivity : AppCompatActivity() {
                 user.visibility = View.GONE
                 val rawText = Engine.display(m).ifBlank { if (busy && position == items.lastIndex) "…" else "" }
                 body.setText(Engine.formatRpText(rawText), TextView.BufferType.SPANNABLE)
-                val candle = getColor(R.color.candle)
                 val muted = getColor(R.color.muted)
-                val wine = getColor(R.color.wine)
-                actions.addView(actionLabel(this@ChatActivity, Store.t("copy"), muted) {
-                    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    cm.setPrimaryClip(android.content.ClipData.newPlainText("t", Engine.display(m)))
-                    Toast.makeText(this@ChatActivity, Store.t("copied"), Toast.LENGTH_SHORT).show()
-                })
-                actions.addView(actionLabel(this@ChatActivity, Store.t("edit"), muted) { showEditMessageDialog(m) })
-                actions.addView(actionLabel(this@ChatActivity, Store.t("continueChat"), candle) { continueGenerate(m) })
-                actions.addView(actionLabel(this@ChatActivity, Store.t("regenerate"), candle) { regenerate(m) })
+                val sibs = Engine.siblings(m)
                 if (m.generations.size > 1) {
                     actions.addView(actionLabel(this@ChatActivity, "${m.generationIndex + 1}/${m.generations.size}", muted) {
                         m.generationIndex = (m.generationIndex + 1) % m.generations.size
@@ -581,15 +656,16 @@ class ChatActivity : AppCompatActivity() {
                         refresh()
                     })
                 }
-                actions.addView(actionLabel(this@ChatActivity, Store.t("delete"), wine) {
-                    confirm(this@ChatActivity, Store.t("deleteQ")) {
-                        Store.state.messages.filter { it.parentId == m.id }.forEach { it.parentId = m.parentId }
-                        Store.state.messages.removeAll { it.id == m.id }
-                        if (conv()?.tipMessageId == m.id) conv()?.tipMessageId = m.parentId
+                if (sibs.size > 1) {
+                    val idx = sibs.indexOfFirst { it.id == m.id }.coerceAtLeast(0)
+                    actions.addView(actionLabel(this@ChatActivity, "${Store.t("branchIndex")} ${idx + 1}/${sibs.size}", muted) {
+                        conv()?.tipMessageId = sibs[(idx + 1) % sibs.size].id
                         Store.persist()
                         refresh()
-                    }
-                })
+                    })
+                }
+                actions.addView(actionLabel(this@ChatActivity, Store.t("more"), muted) { showMessageMenu(m) })
+                body.setOnLongClickListener { showMessageMenu(m); true }
             } else {
                 actions.gravity = android.view.Gravity.END
                 nameRow.visibility = View.GONE
@@ -597,47 +673,17 @@ class ChatActivity : AppCompatActivity() {
                 user.visibility = View.VISIBLE
                 user.setText(Engine.formatRpText(m.content), TextView.BufferType.SPANNABLE)
                 val muted = getColor(R.color.muted)
-                val wine = getColor(R.color.wine)
-                actions.addView(actionLabel(this@ChatActivity, Store.t("edit"), muted) { showEditMessageDialog(m) })
-                actions.addView(actionLabel(this@ChatActivity, Store.t("copy"), muted) {
-                    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    cm.setPrimaryClip(android.content.ClipData.newPlainText("t", m.content))
-                    Toast.makeText(this@ChatActivity, Store.t("copied"), Toast.LENGTH_SHORT).show()
-                })
-                actions.addView(actionLabel(this@ChatActivity, Store.t("delete"), wine) {
-                    confirm(this@ChatActivity, Store.t("deleteQ")) {
-                        Store.state.messages.filter { it.parentId == m.id }.forEach { it.parentId = m.parentId }
-                        Store.state.messages.removeAll { it.id == m.id }
-                        if (conv()?.tipMessageId == m.id) conv()?.tipMessageId = m.parentId
+                val sibs = Engine.siblings(m)
+                if (sibs.size > 1) {
+                    val idx = sibs.indexOfFirst { it.id == m.id }.coerceAtLeast(0)
+                    actions.addView(actionLabel(this@ChatActivity, "${Store.t("branchIndex")} ${idx + 1}/${sibs.size}", muted) {
+                        conv()?.tipMessageId = sibs[(idx + 1) % sibs.size].id
                         Store.persist()
                         refresh()
-                    }
-                })
-                user.setOnLongClickListener {
-                    val opts = arrayOf(Store.t("edit"), Store.t("copy"), Store.t("delete"))
-                    androidx.appcompat.app.AlertDialog.Builder(this@ChatActivity)
-                        .setItems(opts) { _, which ->
-                            when (which) {
-                                0 -> showEditMessageDialog(m)
-                                1 -> {
-                                    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                    cm.setPrimaryClip(android.content.ClipData.newPlainText("t", m.content))
-                                    Toast.makeText(this@ChatActivity, Store.t("copied"), Toast.LENGTH_SHORT).show()
-                                }
-                                2 -> {
-                                    confirm(this@ChatActivity, Store.t("deleteQ")) {
-                                        Store.state.messages.filter { it.parentId == m.id }.forEach { it.parentId = m.parentId }
-                                        Store.state.messages.removeAll { it.id == m.id }
-                                        if (conv()?.tipMessageId == m.id) conv()?.tipMessageId = m.parentId
-                                        Store.persist()
-                                        refresh()
-                                    }
-                                }
-                            }
-                        }
-                        .show()
-                    true
+                    })
                 }
+                actions.addView(actionLabel(this@ChatActivity, Store.t("more"), muted) { showMessageMenu(m) })
+                user.setOnLongClickListener { showMessageMenu(m); true }
             }
         }
     }

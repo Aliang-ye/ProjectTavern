@@ -137,6 +137,7 @@ data class Conversation(
     var worldBookIds: MutableList<String> = mutableListOf(),
     var presetId: String = "",
     var personaId: String? = null,
+    var profileId: String? = null,
     var title: String = "",
     var tipMessageId: String? = null,
     var draftText: String = "",
@@ -173,6 +174,7 @@ data class TavernState(
     var userName: String = "你",
     var userPersona: String = "",
     var streaming: Boolean = true,
-    var autoSummary: Boolean = false,
+    var autoSummary: Boolean = true,
     var developerMode: Boolean = false,
+    var setupDone: Boolean = false,
 )
