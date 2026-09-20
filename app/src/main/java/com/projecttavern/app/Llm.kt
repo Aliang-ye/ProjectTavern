@@ -92,9 +92,8 @@ object Llm {
         val raw = (p.endpoint.ifBlank { "https://api.openai.com/v1" }).trimEnd('/')
         return when {
             raw.endsWith("/chat/completions") -> raw
-            raw.contains("generativelanguage.googleapis.com") -> "$raw/chat/completions"
-            raw.endsWith("/v1") || raw.endsWith("/v2") || raw.endsWith("/v3") || raw.endsWith("/v4") -> "$raw/chat/completions"
-            raw.contains("/v1/") || raw.contains("/v2/") || raw.contains("/v3/") || raw.contains("/v4/") -> "$raw/chat/completions"
+            raw.endsWith("/v1") || raw.endsWith("/v2") || raw.endsWith("/v3") || raw.endsWith("/v4") || raw.endsWith("/openai") -> "$raw/chat/completions"
+            raw.contains("/v1/") || raw.contains("/v2/") || raw.contains("/v3/") || raw.contains("/v4/") || raw.contains("/openai/") -> "$raw/chat/completions"
             else -> "$raw/v1/chat/completions"
         }
     }

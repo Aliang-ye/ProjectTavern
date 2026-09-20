@@ -40,6 +40,9 @@ object Cards {
             val root = JsonParser.parseString(text)
             if (!root.isJsonObject) return CardImport()
             val obj = root.asJsonObject
+            if (obj.has("characters") && obj.has("conversations") && obj.has("worldBooks")) {
+                return CardImport()
+            }
             when {
                 obj.has("spec") && obj.get("spec").asString.contains("world", true) -> importWorldPack(obj)
                 obj.has("world") && obj.has("entries") -> importWorldPack(obj)
@@ -370,7 +373,6 @@ object Cards {
         val crc = CRC32().apply { update(crcSrc) }.value.toInt()
         val crcBytes = ByteBuffer.allocate(4).order(ByteOrder.BIG_ENDIAN).putInt(crc).array()
         val chunk = len + type + data + crcBytes
-        val iend = byteArrayOf(0x49, 0x45, 0x4E, 0x44)
         var insertAt = body.size
         var offset = 0
         while (offset + 8 <= body.size) {

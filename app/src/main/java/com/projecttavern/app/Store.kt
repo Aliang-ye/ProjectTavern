@@ -81,14 +81,19 @@ object Store {
         }
         snapshot.profiles.forEach { it.apiKey = "" }
         if (::appContext.isInitialized) {
-            state.profiles.forEach { p -> Secrets.save(appContext, p.id, p.apiKey) }
+            state.profiles.forEach { p ->
+                if (p.apiKey.isNotBlank()) Secrets.save(appContext, p.id, p.apiKey)
+            }
         }
         ioExecutor.execute {
             try {
                 val json = gson.toJson(snapshot)
                 val tmp = File(file.parent, "${file.name}.tmp")
                 tmp.writeText(json)
-                tmp.renameTo(file)
+                if (!tmp.renameTo(file)) {
+                    tmp.copyTo(file, overwrite = true)
+                    tmp.delete()
+                }
             } catch (_: Exception) {}
         }
         listeners.forEach { it() }

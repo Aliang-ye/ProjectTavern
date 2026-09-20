@@ -27,9 +27,10 @@ class MainActivity : AppCompatActivity() {
                 try {
                     val json = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: return@thread
                     val next = gson.fromJson(json, TavernState::class.java)
+                    val looksLikeBackup = next != null && (next.characters.isNotEmpty() || next.worldBooks.isNotEmpty() || next.conversations.isNotEmpty() || next.profiles.isNotEmpty())
                     runOnUiThread {
                         if (isFinishing || isDestroyed) return@runOnUiThread
-                        if (next != null) {
+                        if (looksLikeBackup) {
                             val prompt = if (Store.state.locale == "en") {
                                 "Restoring this backup will replace current characters, worlds, and chat history. Continue?"
                             } else {
@@ -756,7 +757,12 @@ class MainActivity : AppCompatActivity() {
         s.noProfiles.visibility = if (Store.state.profiles.isEmpty()) View.VISIBLE else View.GONE
         s.profileList.removeAllViews()
         Store.state.profiles.forEach { p ->
-            val kind = if (p.provider == "claude") "Claude" else "OpenAI"
+            val kind = when {
+                p.provider == "claude" -> "Claude"
+                p.endpoint.contains("generativelanguage.googleapis.com") || p.model.contains("gemini", true) -> "Gemini"
+                p.endpoint.contains("11434") -> "Ollama"
+                else -> "OpenAI"
+            }
             val star = if (p.id == Store.state.activeProfileId) "★" else ""
             val meta = if (star.isBlank()) kind else "$kind $star"
             inflateRow(s.profileList, p.name, "$kind · ${p.model}", meta) {
@@ -773,9 +779,8 @@ class MainActivity : AppCompatActivity() {
         s.valStreaming.text = if (Store.state.streaming) "ON" else "OFF"
         s.labelAutoSummary.text = Store.t("autoSummary")
         s.valAutoSummary.text = if (Store.state.autoSummary) "ON" else "OFF"
-        s.developerHint.text = Store.t("autoSummaryHint") + "\n" + Store.t("developerHint")
         s.labelAdvanced.text = Store.t("advanced")
-        s.developerHint.text = Store.t("developerHint")
+        s.developerHint.text = Store.t("autoSummaryHint") + "\n" + Store.t("developerHint")
         s.labelDeveloper.text = Store.t("developerMode")
         s.valDeveloper.text = if (Store.state.developerMode) "ON" else "OFF"
         s.labelData.text = Store.t("data")

@@ -59,6 +59,17 @@ object Engine {
             .sortedBy { it.createdAt }
     }
 
+    fun leafOf(message: ChatMessage): ChatMessage {
+        val msgs = Store.state.messages.filter { it.conversationId == message.conversationId }
+        var cur = message
+        val guard = mutableSetOf<String>()
+        while (guard.add(cur.id)) {
+            val child = msgs.filter { it.parentId == cur.id }.maxByOrNull { it.createdAt } ?: break
+            cur = child
+        }
+        return cur
+    }
+
     fun display(m: ChatMessage): String {
         val g = m.generations.getOrNull(m.generationIndex) ?: m.generations.firstOrNull()
         return g?.content ?: m.content
@@ -126,11 +137,12 @@ object Engine {
     fun shouldSummarize(conversationId: String, tipMessageId: String?): Boolean {
         if (!Store.state.autoSummary) return false
         val history = visible(conversationId, tipMessageId)
-        if (history.size < 10) return false
+        if (history.size < 8) return false
         val mem = memoryFor(conversationId)
-        val lastId = history.lastOrNull()?.id
-        if (mem != null && mem.updatedAt >= (history.lastOrNull()?.createdAt ?: 0L) - 1000) return false
-        return lastId != null
+        val lastCreated = history.lastOrNull()?.createdAt ?: 0L
+        if (mem != null && lastCreated - mem.updatedAt < 60_000) return false
+        val since = history.count { it.createdAt > (mem?.updatedAt ?: 0L) }
+        return since >= 6 || (mem == null && history.size >= 8)
     }
 
     fun summaryPrompt(conversationId: String, tipMessageId: String?): List<Pair<String, String>> {

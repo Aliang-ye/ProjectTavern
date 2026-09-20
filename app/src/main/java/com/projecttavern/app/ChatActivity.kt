@@ -174,6 +174,13 @@ class ChatActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        val text = b.etDraft.text?.toString() ?: ""
+        conv()?.let {
+            if (it.draftText != text) {
+                it.draftText = text
+                Store.persist()
+            }
+        }
         super.onDestroy()
         Llm.cancel()
         // 退出时清理残留的空白失败 assistant 消息，保证消息树整洁
@@ -195,10 +202,12 @@ class ChatActivity : AppCompatActivity() {
         return Engine.visible(convId, c.tipMessageId)
     }
 
-    private fun refresh() {
+    private fun refresh(forceBottom: Boolean = false) {
         adapter.items = path()
         adapter.notifyDataSetChanged()
-        if (adapter.items.isNotEmpty()) b.messages.scrollToPosition(adapter.items.size - 1)
+        if (adapter.items.isNotEmpty() && (forceBottom || userAtBottom)) {
+            b.messages.scrollToPosition(adapter.items.size - 1)
+        }
     }
 
     private fun send() {
@@ -215,7 +224,7 @@ class ChatActivity : AppCompatActivity() {
         c.draftText = "" // 发送成功，清空已存草稿
         hideKeyboard()  // 发送后立即收起键盘，让消息列表完整显示
         // 发送新消息前，清理旧的未完成空白 assistant 脏数据
-        Store.state.messages.removeAll { it.conversationId == convId && it.role == "assistant" && it.content.isBlank() }
+        Store.state.messages.removeAll { it.conversationId == convId && it.role == "assistant" && it.content.isBlank() && it.generations.all { g -> g.content.isBlank() } }
         val user = ChatMessage(Store.nid(), convId, c.tipMessageId, "user", text, mutableListOf(), 0, Store.now())
         Store.state.messages.add(user)
         val gen = Generation(Store.nid(), "", profile.model, profile.provider, Store.now())
@@ -224,7 +233,7 @@ class ChatActivity : AppCompatActivity() {
         c.tipMessageId = asst.id
         c.updatedAt = Store.now()
         Store.persist()
-        refresh()
+        refresh(forceBottom = true)
         generate(asst, user.id)
     }
 
@@ -279,7 +288,7 @@ class ChatActivity : AppCompatActivity() {
                     busy = false
                     streamTarget = null
                     paintSend()
-                    refresh()
+                    refresh(forceBottom = userAtBottom)
                     if (userAtBottom && adapter.itemCount > 0) {
                         b.messages.scrollToPosition(adapter.itemCount - 1)
                     }
@@ -383,11 +392,13 @@ class ChatActivity : AppCompatActivity() {
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     val g = asst.generations.getOrNull(asst.generationIndex)
-                    if (g != null && full.isNotBlank()) g.content = asst.content
+                    if (g != null && full.isNotBlank()) {
+                        g.content = asst.content
+                    }
                     Store.persist()
                     busy = false
                     paintSend()
-                    refresh()
+                    refresh(forceBottom = userAtBottom)
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -471,10 +482,10 @@ class ChatActivity : AppCompatActivity() {
             createdAt = Store.now(),
         )
         Store.state.messages.add(copy)
-        conv()?.tipMessageId = copy.id
+        conv()?.tipMessageId = Engine.leafOf(copy).id
         conv()?.updatedAt = Store.now()
         Store.persist()
-        refresh()
+        refresh(forceBottom = true)
         toast(Store.t("forked"))
     }
 
@@ -507,9 +518,9 @@ class ChatActivity : AppCompatActivity() {
             val idx = sibs.indexOfFirst { it.id == m.id }.coerceAtLeast(0)
             add("${Store.t("branchIndex")} ${idx + 1}/${sibs.size}") {
                 val next = sibs[(idx + 1) % sibs.size]
-                conv()?.tipMessageId = next.id
+                conv()?.tipMessageId = Engine.leafOf(next).id
                 Store.persist()
-                refresh()
+                refresh(forceBottom = true)
             }
         }
         add(Store.t("delete")) {
@@ -659,9 +670,9 @@ class ChatActivity : AppCompatActivity() {
                 if (sibs.size > 1) {
                     val idx = sibs.indexOfFirst { it.id == m.id }.coerceAtLeast(0)
                     actions.addView(actionLabel(this@ChatActivity, "${Store.t("branchIndex")} ${idx + 1}/${sibs.size}", muted) {
-                        conv()?.tipMessageId = sibs[(idx + 1) % sibs.size].id
+                        conv()?.tipMessageId = Engine.leafOf(sibs[(idx + 1) % sibs.size]).id
                         Store.persist()
-                        refresh()
+                        refresh(forceBottom = true)
                     })
                 }
                 actions.addView(actionLabel(this@ChatActivity, Store.t("more"), muted) { showMessageMenu(m) })
@@ -677,9 +688,9 @@ class ChatActivity : AppCompatActivity() {
                 if (sibs.size > 1) {
                     val idx = sibs.indexOfFirst { it.id == m.id }.coerceAtLeast(0)
                     actions.addView(actionLabel(this@ChatActivity, "${Store.t("branchIndex")} ${idx + 1}/${sibs.size}", muted) {
-                        conv()?.tipMessageId = sibs[(idx + 1) % sibs.size].id
+                        conv()?.tipMessageId = Engine.leafOf(sibs[(idx + 1) % sibs.size]).id
                         Store.persist()
-                        refresh()
+                        refresh(forceBottom = true)
                     })
                 }
                 actions.addView(actionLabel(this@ChatActivity, Store.t("more"), muted) { showMessageMenu(m) })

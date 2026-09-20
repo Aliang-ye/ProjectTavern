@@ -223,7 +223,6 @@ object I18n {
         "setupDoneBanner" to "已就绪",
         "geminiHint" to "Google Gemini 走 OpenAI 兼容代理，或填 generativelanguage.googleapis.com 的 OpenAI 兼容端点。",
         "providerGemini" to "Gemini",
-        "noProfiles" to "还没有配置。OpenAI 兼容、Claude、Gemini、本地 Ollama 都可以。",
         "memoryUpdated" to "记忆已更新",
         "branchIndex" to "分支",
     )

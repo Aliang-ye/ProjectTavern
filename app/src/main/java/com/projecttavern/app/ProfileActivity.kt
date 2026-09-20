@@ -178,7 +178,9 @@ class ProfileActivity : AppCompatActivity() {
         p.model = b.etModel.text.toString().trim().ifBlank {
             if (provider == "claude") "claude-sonnet-4-5" else "gpt-4o-mini"
         }
-        p.apiKey = b.etKey.text.toString().replace("\r", "").replace("\n", "").trim()
+        val typed = b.etKey.text.toString().replace("\r", "").replace("\n", "").trim()
+        if (typed.isNotBlank()) p.apiKey = typed
+        else if (p.apiKey.isBlank()) p.apiKey = Secrets.get(this, p.id)
         Store.state.activeProfileId = p.id
         if (p.apiKey.isNotBlank()) Store.state.setupDone = true
         Store.persist()
