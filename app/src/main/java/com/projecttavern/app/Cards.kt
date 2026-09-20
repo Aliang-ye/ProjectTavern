@@ -33,6 +33,28 @@ object Cards {
         return importJson(ctx, text)
     }
 
+    internal fun importKind(raw: String): String {
+        val text = raw.trim()
+        if (text.isBlank()) return "empty"
+        return try {
+            val root = JsonParser.parseString(text)
+            if (!root.isJsonObject) return "unknown"
+            val obj = root.asJsonObject
+            when {
+                obj.has("characters") && obj.has("conversations") && obj.has("worldBooks") -> "backup"
+                obj.has("spec") && obj.get("spec").asString.contains("world", true) -> "world"
+                obj.has("world") && obj.has("entries") -> "world"
+                obj.has("spec") && obj.get("spec").asString.contains("chara", true) -> "chara_v2"
+                obj.has("data") && obj.get("data").isJsonObject -> "chara_v2"
+                obj.has("name") && (obj.has("first_mes") || obj.has("mes_example") || obj.has("firstMes")) -> "chara_v1"
+                obj.has("name") && (obj.has("firstMessage") || obj.has("description")) -> "tavern_character"
+                else -> "unknown"
+            }
+        } catch (_: Exception) {
+            "unknown"
+        }
+    }
+
     fun importJson(ctx: Context, raw: String): CardImport {
         val text = raw.trim()
         if (text.isBlank()) return CardImport()
@@ -40,21 +62,11 @@ object Cards {
             val root = JsonParser.parseString(text)
             if (!root.isJsonObject) return CardImport()
             val obj = root.asJsonObject
-            if (obj.has("characters") && obj.has("conversations") && obj.has("worldBooks")) {
-                return CardImport()
-            }
-            when {
-                obj.has("spec") && obj.get("spec").asString.contains("world", true) -> importWorldPack(obj)
-                obj.has("world") && obj.has("entries") -> importWorldPack(obj)
-                obj.has("spec") && obj.get("spec").asString.contains("chara", true) -> importCharaV2(ctx, obj)
-                obj.has("data") && obj.get("data").isJsonObject -> importCharaV2(ctx, obj)
-                obj.has("name") && (obj.has("first_mes") || obj.has("firstMessage") || obj.has("description")) -> {
-                    if (obj.has("first_mes") || obj.has("mes_example") || obj.has("firstMes")) importCharaV1(ctx, obj)
-                    else {
-                        val ch = Store.importCharacter(text)
-                        CardImport(character = ch)
-                    }
-                }
+            when (importKind(text)) {
+                "world" -> importWorldPack(obj)
+                "chara_v2" -> importCharaV2(ctx, obj)
+                "chara_v1" -> importCharaV1(ctx, obj)
+                "tavern_character" -> CardImport(character = Store.importCharacter(text))
                 else -> CardImport()
             }
         } catch (_: Exception) {

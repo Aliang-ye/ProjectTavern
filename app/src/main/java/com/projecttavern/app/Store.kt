@@ -63,7 +63,12 @@ object Store {
 
     fun <T> locked(block: () -> T): T = synchronized(stateLock, block)
 
+    internal fun attachStateForTests(next: TavernState) {
+        state = next
+    }
+
     fun persist() {
+        if (!::file.isInitialized) return
         val snapshot = locked {
             state.copy(
                 characters = ArrayList(state.characters),

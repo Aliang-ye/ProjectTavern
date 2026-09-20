@@ -89,7 +89,7 @@ object Llm {
         }
     }
 
-    private fun openaiUrl(p: ApiProfile): String {
+    internal fun openaiUrl(p: ApiProfile): String {
         val raw = (p.endpoint.ifBlank { "https://api.openai.com/v1" }).trimEnd('/')
         return when {
             raw.endsWith("/chat/completions") -> raw
@@ -108,7 +108,7 @@ object Llm {
         }
     }
 
-    private fun isPrivateHost(host: String): Boolean {
+    internal fun isPrivateHost(host: String): Boolean {
         val h = host.lowercase().trim('.')
         if (h == "localhost" || h.endsWith(".local")) return true
         val parts = h.split('.')
@@ -122,7 +122,7 @@ object Llm {
         return false
     }
 
-    private fun claudeUrl(p: ApiProfile): String {
+    internal fun claudeUrl(p: ApiProfile): String {
         val raw = (p.endpoint.ifBlank { "https://api.anthropic.com" }).trimEnd('/')
         return when {
             raw.endsWith("/messages") -> raw

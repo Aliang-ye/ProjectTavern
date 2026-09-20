@@ -128,6 +128,7 @@ class CharacterActivity : AppCompatActivity() {
         b.tabPrompt.setOnClickListener { switchTab(3) }
         setupTouchToHideKeyboard(b.root, this)
         bind()
+        baseline = snapshotOf(current())
     }
 
     private var activeTab = 0
@@ -216,7 +217,7 @@ class CharacterActivity : AppCompatActivity() {
 
     private fun applyFormToDraft() {
         val c = current()
-        c.name = b.etName.text.toString().ifBlank { Store.t("newCharacter") }
+        c.name = b.etName.text.toString()
         c.tags = b.etTags.text.toString().split(Regex("[,，;；\\s]+")).map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
         c.description = b.etDesc.text.toString()
         c.personality = b.etPersonality.text.toString()
@@ -226,30 +227,22 @@ class CharacterActivity : AppCompatActivity() {
         c.exampleDialogues = b.etExamples.text.toString()
         c.systemPrompt = b.etSystem.text.toString()
         c.creatorNotes = b.etNotes.text.toString()
-        c.updatedAt = Store.now()
     }
 
+    private fun snapshotOf(c: Character) = Store.gson.toJson(
+        c.copy(
+            tags = c.tags.toMutableList(),
+            alternateGreetings = c.alternateGreetings.toMutableList(),
+            createdAt = 0,
+            updatedAt = 0,
+        )
+    )
+
+    private var baseline = ""
+
     private fun isDirty(): Boolean {
-        if (isNew) {
-            return current().name != Store.t("newCharacter") ||
-                current().description.isNotBlank() ||
-                current().personality.isNotBlank() ||
-                current().scenario.isNotBlank() ||
-                current().avatar != null
-        }
-        val orig = Store.state.characters.find { it.id == id } ?: return true
-        val c = current()
-        return orig.name != c.name ||
-            orig.description != c.description ||
-            orig.personality != c.personality ||
-            orig.scenario != c.scenario ||
-            orig.firstMessage != c.firstMessage ||
-            orig.exampleDialogues != c.exampleDialogues ||
-            orig.systemPrompt != c.systemPrompt ||
-            orig.creatorNotes != c.creatorNotes ||
-            orig.avatar != c.avatar ||
-            orig.tags != c.tags ||
-            orig.alternateGreetings != c.alternateGreetings
+        applyFormToDraft()
+        return snapshotOf(current()) != baseline
     }
 
     private fun offerCharacterChat(characterId: String) {
@@ -271,14 +264,25 @@ class CharacterActivity : AppCompatActivity() {
     private fun save(commitToStore: Boolean = false) {
         applyFormToDraft()
         val c = current()
+        c.name = c.name.ifBlank { Store.t("newCharacter") }
+        c.updatedAt = Store.now()
         if (commitToStore) {
-            val idx = Store.state.characters.indexOfFirst { it.id == c.id }
-            if (idx >= 0) Store.state.characters[idx] = c
-            else Store.state.characters.add(0, c)
+            val stored = c.copy(
+                tags = c.tags.toMutableList(),
+                alternateGreetings = c.alternateGreetings.toMutableList(),
+            )
+            val idx = Store.state.characters.indexOfFirst { it.id == stored.id }
+            if (idx >= 0) Store.state.characters[idx] = stored
+            else Store.state.characters.add(0, stored)
+            draftCharacter = stored.copy(
+                tags = stored.tags.toMutableList(),
+                alternateGreetings = stored.alternateGreetings.toMutableList(),
+            )
             isNew = false
             val sel = b.spWorld.selectedItemPosition
             Store.setDefaultWorld(id, if (sel <= 0) null else Store.state.worldBooks.getOrNull(sel - 1)?.id)
             Store.persist()
+            baseline = snapshotOf(current())
         }
     }
 

@@ -74,6 +74,7 @@ class StoryActivity : AppCompatActivity() {
         b.tabWorlds.setOnClickListener { switchTab(2) }
         setupTouchToHideKeyboard(b.root, this)
         bind()
+        baseline = snapshotOf(current())
     }
 
     private var activeTab = 0
@@ -173,6 +174,7 @@ class StoryActivity : AppCompatActivity() {
                         Store.persist()
                     }
                     bind(keepForm = true)
+                    baseline = snapshotOf(current())
                 }
                 row.addView(tv); row.addView(rm)
                 row.setPadding(0, dp(6), 0, dp(6))
@@ -200,6 +202,7 @@ class StoryActivity : AppCompatActivity() {
                 }
                 if (!isNew) Store.persist()
                 bind(keepForm = true)
+                baseline = snapshotOf(current())
             }
             .show()
     }
@@ -227,42 +230,45 @@ class StoryActivity : AppCompatActivity() {
             .show()
     }
 
+    private var baseline = ""
+
+    private fun snapshotOf(st: Story) = Store.gson.toJson(
+        mapOf(
+            "story" to st.copy(worldBookIds = st.worldBookIds.toMutableList(), createdAt = 0, updatedAt = 0),
+            "parts" to (if (isNew) draftParticipants else Store.state.participants.filter { it.storyId == id }).map { it.copy() },
+        )
+    )
+
     private fun applyFormToDraft() {
         val st = current()
-        st.name = b.etName.text.toString().ifBlank { Store.t("newStory") }
+        st.name = b.etName.text.toString()
         st.description = b.etDesc.text.toString()
         val sel = b.spPersona.selectedItemPosition
         st.personaId = if (sel <= 0) null else Store.state.personas.getOrNull(sel - 1)?.id
-        st.updatedAt = Store.now()
     }
 
     private fun isDirty(): Boolean {
-        if (isNew) {
-            return current().name != Store.t("newStory") ||
-                current().description.isNotBlank() ||
-                draftParticipants.isNotEmpty() ||
-                current().worldBookIds.isNotEmpty()
-        }
-        val orig = Store.state.stories.find { it.id == id } ?: return true
-        val st = current()
-        return orig.name != st.name ||
-            orig.description != st.description ||
-            orig.personaId != st.personaId ||
-            orig.worldBookIds != st.worldBookIds
+        applyFormToDraft()
+        return snapshotOf(current()) != baseline
     }
 
     private fun save(commitToStore: Boolean = false) {
         applyFormToDraft()
         val st = current()
+        st.name = st.name.ifBlank { Store.t("newStory") }
+        st.updatedAt = Store.now()
         if (commitToStore) {
-            val idx = Store.state.stories.indexOfFirst { it.id == st.id }
-            if (idx >= 0) Store.state.stories[idx] = st
-            else Store.state.stories.add(0, st)
+            val stored = st.copy(worldBookIds = st.worldBookIds.toMutableList())
+            val idx = Store.state.stories.indexOfFirst { it.id == stored.id }
+            if (idx >= 0) Store.state.stories[idx] = stored
+            else Store.state.stories.add(0, stored)
+            draftStory = stored.copy(worldBookIds = stored.worldBookIds.toMutableList())
             draftParticipants.forEach { p ->
                 if (Store.state.participants.none { it.id == p.id }) Store.state.participants.add(p)
             }
             isNew = false
             Store.persist()
+            baseline = snapshotOf(current())
         }
     }
 }

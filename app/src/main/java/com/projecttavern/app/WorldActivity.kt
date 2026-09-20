@@ -120,6 +120,7 @@ class WorldActivity : AppCompatActivity() {
         })
 
         bind()
+        baseline = snapshotOf(current())
     }
 
     private fun switchTab(tab: Int) {
@@ -309,6 +310,7 @@ class WorldActivity : AppCompatActivity() {
                     Store.persist()
                 }
                 paintEntries()
+                baseline = snapshotOf(current())
             }
             .setNegativeButton(Store.t("cancel"), null)
             .setNeutralButton(Store.t("delete")) { _, _ ->
@@ -319,6 +321,7 @@ class WorldActivity : AppCompatActivity() {
                     Store.persist()
                 }
                 paintEntries()
+                baseline = snapshotOf(current())
             }
             .show()
     }
@@ -346,46 +349,35 @@ class WorldActivity : AppCompatActivity() {
             .show()
     }
 
+    private var baseline = ""
+
+    private fun snapshotOf(w: WorldBook) = Store.gson.toJson(
+        mapOf(
+            "world" to w.copy(
+                willAlternateGreetings = w.willAlternateGreetings.toMutableList(),
+                createdAt = 0,
+                updatedAt = 0,
+            ),
+            "entries" to (if (isNew) draftEntries else Store.state.entries.filter { it.worldBookId == id })
+                .map { it.copy(keys = it.keys.toMutableList(), secondaryKeys = it.secondaryKeys.toMutableList()) },
+        )
+    )
+
     private fun applyFormToDraft() {
         val w = current()
         writeSection()
-        w.name = b.etName.text.toString().ifBlank { Store.t("newWorld") }
-        w.willName = b.etWillName.text.toString().ifBlank { Store.t("worldWill") }
+        w.name = b.etName.text.toString()
+        w.willName = b.etWillName.text.toString()
         w.willDescription = b.etWillDesc.text.toString()
         w.willScenario = b.etWillScenario.text.toString()
-        w.willFirstMessage = b.etWillFirstMsg.text.toString().ifBlank {
-            if (Store.state.locale == "en") "Welcome to ${w.name}. Where would you like to begin your journey?" else "「世界的心跳在此刻与你共鸣。你想从何处开启在【${w.name}】的故事？」"
-        }
+        w.willFirstMessage = b.etWillFirstMsg.text.toString()
         w.willAlternateGreetings = b.etWillAltMsg.text.toString().split("\n").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
-        w.willSystemPrompt = b.etWillPrompt.text.toString().ifBlank {
-            if (Store.state.locale == "en") "You are the World Will and Narrator for ${w.name}. Vividly describe environments, atmosphere, and NPCs. React to {{user}}'s actions, but never speak or act on behalf of {{user}}." else "你是【${w.name}】的【世界意志】与故事讲述者（World Will / Narrator）。\n根据世界法则与设定，生动描绘环境与NPC，推动情节，绝不代替玩家（{{user}}）发言或行动。"
-        }
-        w.updatedAt = Store.now()
+        w.willSystemPrompt = b.etWillPrompt.text.toString()
     }
 
     private fun isDirty(): Boolean {
-        if (isNew) {
-            return current().name != Store.t("newWorld") ||
-                current().description.isNotBlank() ||
-                current().geography.isNotBlank() ||
-                draftEntries.isNotEmpty()
-        }
-        val orig = Store.state.worldBooks.find { it.id == id } ?: return true
-        val w = current()
-        return orig.name != w.name ||
-            orig.description != w.description ||
-            orig.geography != w.geography ||
-            orig.history != w.history ||
-            orig.institutions != w.institutions ||
-            orig.culture != w.culture ||
-            orig.personalNotes != w.personalNotes ||
-            orig.willName != w.willName ||
-            orig.willDescription != w.willDescription ||
-            orig.willScenario != w.willScenario ||
-            orig.willFirstMessage != w.willFirstMessage ||
-            orig.willSystemPrompt != w.willSystemPrompt ||
-            orig.willAvatar != w.willAvatar ||
-            orig.willAlternateGreetings != w.willAlternateGreetings
+        applyFormToDraft()
+        return snapshotOf(current()) != baseline
     }
 
     private fun offerWorldChat(worldBookId: String) {
@@ -407,15 +399,27 @@ class WorldActivity : AppCompatActivity() {
     private fun save(commitToStore: Boolean = false) {
         applyFormToDraft()
         val w = current()
+        w.name = w.name.ifBlank { Store.t("newWorld") }
+        w.willName = w.willName.ifBlank { Store.t("worldWill") }
+        if (w.willFirstMessage.isBlank()) {
+            w.willFirstMessage = if (Store.state.locale == "en") "Welcome to ${w.name}. Where would you like to begin your journey?" else "「世界的心跳在此刻与你共鸣。你想从何处开启在【${w.name}】的故事？」"
+        }
+        if (w.willSystemPrompt.isBlank()) {
+            w.willSystemPrompt = if (Store.state.locale == "en") "You are the World Will and Narrator for ${w.name}. Vividly describe environments, atmosphere, and NPCs. React to {{user}}'s actions, but never speak or act on behalf of {{user}}." else "你是【${w.name}】的【世界意志】与故事讲述者（World Will / Narrator）。\n根据世界法则与设定，生动描绘环境与NPC，推动情节，绝不代替玩家（{{user}}）发言或行动。"
+        }
+        w.updatedAt = Store.now()
         if (commitToStore) {
-            val idx = Store.state.worldBooks.indexOfFirst { it.id == w.id }
-            if (idx >= 0) Store.state.worldBooks[idx] = w
-            else Store.state.worldBooks.add(0, w)
+            val stored = w.copy(willAlternateGreetings = w.willAlternateGreetings.toMutableList())
+            val idx = Store.state.worldBooks.indexOfFirst { it.id == stored.id }
+            if (idx >= 0) Store.state.worldBooks[idx] = stored
+            else Store.state.worldBooks.add(0, stored)
+            draftWorld = stored.copy(willAlternateGreetings = stored.willAlternateGreetings.toMutableList())
             draftEntries.forEach { entry ->
                 if (Store.state.entries.none { it.id == entry.id }) Store.state.entries.add(entry)
             }
             isNew = false
             Store.persist()
+            baseline = snapshotOf(current())
         }
     }
 
