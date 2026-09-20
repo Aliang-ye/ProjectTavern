@@ -3,7 +3,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:name=".TavernApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -14,19 +14,20 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".CharacterActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".WorldActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".StoryActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".ChatActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".EntryTestActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".ProfileActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".PresetActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".CharacterActivity" android:exported="false" android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".WorldActivity" android:exported="false" android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".StoryActivity" android:exported="false" android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".ChatActivity" android:exported="false" android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".EntryTestActivity" android:exported="false" android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".ProfileActivity" android:exported="false" android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".PresetActivity" android:exported="false" android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" android:windowSoftInputMode="adjustResize" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

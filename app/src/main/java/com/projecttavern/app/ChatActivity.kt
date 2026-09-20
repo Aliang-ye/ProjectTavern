@@ -141,11 +141,7 @@ class ChatActivity : AppCompatActivity() {
             true
         }
         val contextText = if (c.storyId == null) Store.t("privateChat") else Store.state.stories.find { it.id == c.storyId }?.name ?: Store.t("stories")
-        val live = if (busy) {
-            if (Store.state.locale == "en") "Streaming" else "流式中"
-        } else {
-            if (Store.state.locale == "en") "Ready" else "就绪"
-        }
+        val live = if (busy) Store.t("streamingStatus") else Store.t("readyStatus")
         b.headerSub.text = "$contextText · $live"
         b.btnDebug.text = Store.t("debugger")
         b.etDraft.hint = Store.t("writeAction")
@@ -187,11 +183,7 @@ class ChatActivity : AppCompatActivity() {
         b.btnSend.setBackgroundResource(if (busy) R.drawable.bg_stop else R.drawable.bg_send)
         val c = conv() ?: return
         val contextText = if (c.storyId == null) Store.t("privateChat") else Store.state.stories.find { it.id == c.storyId }?.name ?: Store.t("stories")
-        val live = if (busy) {
-            if (Store.state.locale == "en") "Streaming" else "流式中"
-        } else {
-            if (Store.state.locale == "en") "Ready" else "就绪"
-        }
+        val live = if (busy) Store.t("streamingStatus") else Store.t("readyStatus")
         b.headerSub.text = "$contextText · $live"
     }
 
@@ -326,6 +318,11 @@ class ChatActivity : AppCompatActivity() {
             toast(Store.t("needProfile"))
             return
         }
+        // 重写前先将当前最新展示文本保存在对应 generation 中，保证切换分支不丢失前次输出
+        val currentGen = m.generations.getOrNull(m.generationIndex)
+        if (currentGen != null && m.content.isNotBlank()) {
+            currentGen.content = m.content
+        }
         val gen = Generation(Store.nid(), "", profile.model, profile.provider, Store.now())
         m.generations.add(gen)
         m.generationIndex = m.generations.lastIndex
@@ -418,9 +415,11 @@ class ChatActivity : AppCompatActivity() {
         val box = android.widget.FrameLayout(this)
         box.setPadding(pad, dp(12), pad, dp(4))
         box.addView(et)
+        val scroll = android.widget.ScrollView(this)
+        scroll.addView(box)
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle(Store.t("editMessage"))
-            .setView(box)
+            .setView(scroll)
             .setPositiveButton(Store.t("save")) { _, _ ->
                 val newText = et.text.toString().trim()
                 if (newText.isNotBlank()) {
@@ -466,8 +465,10 @@ class ChatActivity : AppCompatActivity() {
             val sb = StringBuilder()
             sb.append("# ${c.title}\n\n")
             val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-            sb.append("> Project Tavern 对话记录导出\n")
-            sb.append("> 导出时间：$dateStr\n\n---\n\n")
+            val bannerTitle = if (Store.state.locale == "en") "> Project Tavern Chat History Export\n" else "> Project Tavern 对话记录导出\n"
+            val datePrefix = if (Store.state.locale == "en") "> Exported At: " else "> 导出时间："
+            sb.append(bannerTitle)
+            sb.append("$datePrefix$dateStr\n\n---\n\n")
 
             for (m in msgs) {
                 val speaker = if (m.role == "assistant") charName else userName

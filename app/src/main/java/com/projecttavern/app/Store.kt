@@ -58,12 +58,29 @@ object Store {
     }
 
     private val ioExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val stateLock = Any()
 
     fun persist() {
-        // 在后台线程内做深拷贝再序列化，防止主线程并发修改 state 时 toJson 产生数据竞态
+        // 在派发到后台写盘线程前，先在调用方线程建立独立集合快照，彻底消灭 ConcurrentModificationException
+        val snapshot = synchronized(stateLock) {
+            state.copy(
+                characters = ArrayList(state.characters),
+                characterWorldBooks = ArrayList(state.characterWorldBooks),
+                worldBooks = ArrayList(state.worldBooks),
+                entries = ArrayList(state.entries),
+                stories = ArrayList(state.stories),
+                participants = ArrayList(state.participants),
+                conversations = ArrayList(state.conversations),
+                messages = ArrayList(state.messages),
+                presets = ArrayList(state.presets),
+                profiles = ArrayList(state.profiles),
+                personas = ArrayList(state.personas),
+                memories = ArrayList(state.memories)
+            )
+        }
         ioExecutor.execute {
             try {
-                val json = gson.toJson(state) // state mutation on main thread is single-threaded; this is safe enough without full deep copy since gson.toJson reads fields, not iterates lazily
+                val json = gson.toJson(snapshot)
                 val tmp = File(file.parent, "${file.name}.tmp")
                 tmp.writeText(json)
                 tmp.renameTo(file)
@@ -119,8 +136,23 @@ object Store {
             try {
                 val avatarFile = File(copy.avatar!!)
                 if (avatarFile.exists() && avatarFile.isFile) {
-                    val b64 = android.util.Base64.encodeToString(avatarFile.readBytes(), android.util.Base64.NO_WRAP)
-                    copy.avatar = "data:image/jpeg;base64,$b64"
+                    // 先解码图片边界，按最大边 640px 计算合适的 inSampleSize，避免大图导致 OOM
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeFile(avatarFile.absolutePath, bounds)
+                    val maxSide = maxOf(bounds.outWidth, bounds.outHeight)
+                    var sampleSize = 1
+                    while (maxSide / sampleSize > 640) {
+                        sampleSize *= 2
+                    }
+                    val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                    val bmp = android.graphics.BitmapFactory.decodeFile(avatarFile.absolutePath, opts)
+                    if (bmp != null) {
+                        val baos = java.io.ByteArrayOutputStream()
+                        bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, baos)
+                        bmp.recycle()
+                        val b64 = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+                        copy.avatar = "data:image/jpeg;base64,$b64"
+                    }
                 }
             } catch (_: Exception) {}
         }
@@ -130,13 +162,21 @@ object Store {
     fun importCharacter(jsonStr: String): Character? {
         return try {
             val ch = gson.fromJson(jsonStr.trim(), Character::class.java)
-            if (ch != null && ch.name.isNotBlank()) {
+            if (ch != null && !ch.name.isNullOrBlank()) {
                 val timestamp = now()
                 ch.id = nid()
                 ch.createdAt = timestamp
                 ch.updatedAt = timestamp
-                if (ch.tags == null) ch.tags = mutableListOf()
-                if (ch.alternateGreetings == null) ch.alternateGreetings = mutableListOf()
+                ch.name = ch.name ?: ""
+                ch.description = ch.description ?: ""
+                ch.personality = ch.personality ?: ""
+                ch.scenario = ch.scenario ?: ""
+                ch.firstMessage = ch.firstMessage ?: ""
+                ch.exampleDialogues = ch.exampleDialogues ?: ""
+                ch.systemPrompt = ch.systemPrompt ?: ""
+                ch.creatorNotes = ch.creatorNotes ?: ""
+                ch.tags = ch.tags ?: mutableListOf()
+                ch.alternateGreetings = ch.alternateGreetings ?: mutableListOf()
                 // 如果头像为嵌入式 Base64，落地为本地图片文件，确保跨设备导入头像不丢失
                 if (ch.avatar?.startsWith("data:") == true && ::appContext.isInitialized) {
                     try {

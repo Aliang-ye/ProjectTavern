@@ -23,24 +23,32 @@ class MainActivity : AppCompatActivity() {
     private val import =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
             if (uri == null) return@registerForActivityResult
-            try {
-                val json = contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: return@registerForActivityResult
-                val next = gson.fromJson(json, TavernState::class.java)
-                if (next != null) {
-                    val prompt = if (Store.state.locale == "en") {
-                        "Restoring this backup will replace current characters, worlds, and chat history. Continue?"
-                    } else {
-                        "恢复此备份将覆盖当前的所有角色、世界与聊天记录。是否继续？"
+            kotlin.concurrent.thread {
+                try {
+                    val json = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: return@thread
+                    val next = gson.fromJson(json, TavernState::class.java)
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        if (next != null) {
+                            val prompt = if (Store.state.locale == "en") {
+                                "Restoring this backup will replace current characters, worlds, and chat history. Continue?"
+                            } else {
+                                "恢复此备份将覆盖当前的所有角色、世界与聊天记录。是否继续？"
+                            }
+                            val positive = if (Store.state.locale == "en") "Restore" else "恢复"
+                            confirm(this, prompt, positive) {
+                                Store.replace(next)
+                                refresh()
+                                Toast.makeText(this, Store.t("backupRestored"), Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     }
-                    val positive = if (Store.state.locale == "en") "Restore" else "恢复"
-                    confirm(this, prompt, positive) {
-                        Store.replace(next)
-                        refresh()
-                        Toast.makeText(this, if (Store.state.locale == "en") "Backup restored" else "备份已恢复", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        Toast.makeText(this, if (Store.state.locale == "en") "Import failed: ${e.message ?: "invalid JSON"}" else "导入失败：${e.message ?: "JSON 格式不正确"}", Toast.LENGTH_LONG).show()
                     }
                 }
-            } catch (e: Exception) {
-                Toast.makeText(this, if (Store.state.locale == "en") "Import failed: ${e.message ?: "invalid JSON"}" else "导入失败：${e.message ?: "JSON 格式不正确"}", Toast.LENGTH_LONG).show()
             }
         }
 
@@ -217,16 +225,36 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton(Store.t("import")) { _, _ ->
                 val json = et.text.toString().trim()
                 if (json.isBlank()) return@setPositiveButton
-                val ch = Store.importCharacter(json)
-                if (ch != null) {
-                    refresh()
-                    Toast.makeText(this, "${Store.t("characterImported")}: ${ch.name}", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this, Store.t("invalidCharacterJson"), Toast.LENGTH_SHORT).show()
+                kotlin.concurrent.thread {
+                    val ch = Store.importCharacter(json)
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        if (ch != null) {
+                            refreshCharacters()
+                            Toast.makeText(this@MainActivity, "${Store.t("characterImported")}: ${ch.name}", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(this@MainActivity, Store.t("invalidCharacterJson"), Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             }
             .setNegativeButton(Store.t("cancel"), null)
             .show()
+    }
+
+    private val MAX_DISPLAY = 60
+
+    private fun addMaxDisplayNotice(container: LinearLayout, shown: Int, total: Int) {
+        if (total > shown) {
+            val tv = TextView(this).apply {
+                text = "${Store.t("maxDisplayNotice")} ($shown / $total)"
+                setTextColor(getColor(R.color.muted))
+                textSize = 12f
+                gravity = android.view.Gravity.CENTER
+                setPadding(0, dp(16), 0, dp(24))
+            }
+            container.addView(tv)
+        }
     }
 
     private fun refreshCharacters() {
@@ -234,8 +262,9 @@ class MainActivity : AppCompatActivity() {
         val list = Store.state.characters.filter {
             q.isEmpty() || it.name.lowercase().contains(q) || it.tags.any { t -> t.lowercase().contains(q) }
         }.sortedWith(compareByDescending<Character> { it.isPinned }.thenByDescending { it.updatedAt })
+        val displayed = if (list.size > MAX_DISPLAY) list.take(MAX_DISPLAY) else list
         fill(b.panelCharacters.list) {
-            if (list.isEmpty()) {
+            if (displayed.isEmpty()) {
                 val tv = TextView(this)
                 tv.text = Store.t("emptyCharacters")
                 tv.setTextColor(getColor(R.color.muted))
@@ -243,7 +272,7 @@ class MainActivity : AppCompatActivity() {
                 tv.setPadding(0, dp(24), 0, 0)
                 it.addView(tv)
             }
-            list.forEach { c ->
+            displayed.forEach { c ->
                 val row = inflateSwipeRow(
                     it,
                     title = c.name,
@@ -276,6 +305,7 @@ class MainActivity : AppCompatActivity() {
                     openScreen(ChatActivity::class.java) { it.putExtra("id", id) }
                 }
             }
+            addMaxDisplayNotice(it, displayed.size, list.size)
         }
     }
 
@@ -284,8 +314,9 @@ class MainActivity : AppCompatActivity() {
         val worlds = Store.state.worldBooks
             .filter { q.isEmpty() || it.name.lowercase().contains(q) || it.description.lowercase().contains(q) || it.willName.lowercase().contains(q) }
             .sortedWith(compareByDescending<WorldBook> { it.isPinned }.thenByDescending { it.updatedAt })
+        val displayed = if (worlds.size > MAX_DISPLAY) worlds.take(MAX_DISPLAY) else worlds
         fill(b.panelWorlds.list) {
-            if (worlds.isEmpty()) {
+            if (displayed.isEmpty()) {
                 val tv = TextView(this)
                 tv.text = Store.t("emptyWorlds")
                 tv.setTextColor(getColor(R.color.muted))
@@ -293,7 +324,7 @@ class MainActivity : AppCompatActivity() {
                 tv.setPadding(0, dp(24), 0, 0)
                 it.addView(tv)
             }
-            worlds.forEach { w ->
+            displayed.forEach { w ->
                 val n = Store.state.entries.count { e -> e.worldBookId == w.id }
                 val willName = w.willName.ifBlank { Store.t("worldWill") }
                 val row = inflateSwipeRow(
@@ -326,6 +357,7 @@ class MainActivity : AppCompatActivity() {
                     openScreen(ChatActivity::class.java) { intent -> intent.putExtra("id", convId) }
                 }
             }
+            addMaxDisplayNotice(it, displayed.size, worlds.size)
         }
     }
 
@@ -334,8 +366,9 @@ class MainActivity : AppCompatActivity() {
         val stories = Store.state.stories
             .filter { q.isEmpty() || it.name.lowercase().contains(q) || it.description.lowercase().contains(q) }
             .sortedWith(compareByDescending<Story> { it.isPinned }.thenByDescending { it.updatedAt })
+        val displayed = if (stories.size > MAX_DISPLAY) stories.take(MAX_DISPLAY) else stories
         fill(b.panelStories.list) {
-            if (stories.isEmpty()) {
+            if (displayed.isEmpty()) {
                 val tv = TextView(this)
                 tv.text = Store.t("emptyStories")
                 tv.setTextColor(getColor(R.color.muted))
@@ -343,7 +376,7 @@ class MainActivity : AppCompatActivity() {
                 tv.setPadding(0, dp(24), 0, 0)
                 it.addView(tv)
             }
-            stories.forEach { st ->
+            displayed.forEach { st ->
                 val n = Store.state.participants.count { it.storyId == st.id }
                 val chats = Store.state.conversations.count { it.storyId == st.id }
                 inflateSwipeRow(
@@ -369,13 +402,15 @@ class MainActivity : AppCompatActivity() {
                     }
                 )
             }
+            addMaxDisplayNotice(it, displayed.size, stories.size)
         }
     }
 
     private fun refreshChats() {
         val allConvs = Store.state.conversations.sortedWith(compareByDescending<Conversation> { it.isPinned }.thenByDescending { it.updatedAt })
+        val displayed = if (allConvs.size > MAX_DISPLAY) allConvs.take(MAX_DISPLAY) else allConvs
         fill(b.panelChats.list) {
-            if (allConvs.isEmpty()) {
+            if (displayed.isEmpty()) {
                 val tv = TextView(this)
                 tv.text = Store.t("noChats")
                 tv.setTextColor(getColor(R.color.muted))
@@ -384,7 +419,7 @@ class MainActivity : AppCompatActivity() {
                 it.addView(tv)
                 return@fill
             }
-            allConvs.forEach { c ->
+            displayed.forEach { c ->
                 val ch = Store.state.characters.find { it.id == c.characterId }
                 val world = if (ch == null && c.worldBookIds.isNotEmpty()) {
                     Store.state.worldBooks.find { it.id in c.worldBookIds }
@@ -421,14 +456,15 @@ class MainActivity : AppCompatActivity() {
                     },
                     onDelete = {
                         confirm(this@MainActivity, Store.t("deleteQ")) {
-                            Store.state.messages.removeAll { m -> m.conversationId == c.id }
-                            Store.state.conversations.removeAll { conv -> conv.id == c.id }
+                            Store.state.conversations.removeAll { it.id == c.id }
+                            Store.state.messages.removeAll { it.conversationId == c.id }
                             Store.persist()
-                            refresh()
+                            refreshChats()
                         }
                     }
                 )
             }
+            addMaxDisplayNotice(it, displayed.size, allConvs.size)
         }
     }
 

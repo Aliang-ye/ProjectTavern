@@ -34,6 +34,7 @@
                 android:layout_height="match_parent"
                 android:background="@drawable/bg_avatar"
                 android:clipToOutline="true"
+                android:contentDescription="avatar"
                 android:scaleType="centerCrop"
                 android:visibility="gone" />
         </FrameLayout>
@@ -69,10 +70,10 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="end"
+        android:layout_marginStart="48dp"
         android:layout_marginTop="8dp"
         android:background="@drawable/bg_bubble"
         android:elevation="1dp"
-        android:maxWidth="280dp"
         android:paddingHorizontal="14dp"
         android:paddingVertical="10dp"
         android:textColor="@color/ink"
