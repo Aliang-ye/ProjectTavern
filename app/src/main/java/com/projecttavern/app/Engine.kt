@@ -60,7 +60,7 @@ object Engine {
             val formatted = escaped.replace(Regex("\\*([^*\\n]+)\\*")) { matchResult ->
                 "<i>${matchResult.groupValues[1]}</i>"
             }.replace("\n", "<br/>")
-            android.text.Html.fromHtml(formatted, android.text.Html.FROM_HTML_MODE_COMPACT)
+            android.text.SpannableStringBuilder(android.text.Html.fromHtml(formatted, android.text.Html.FROM_HTML_MODE_COMPACT))
         } catch (_: Exception) {
             raw
         }

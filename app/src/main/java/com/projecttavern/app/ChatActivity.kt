@@ -129,9 +129,11 @@ class ChatActivity : AppCompatActivity() {
         val world = if (c.characterId.isNullOrBlank() && c.worldBookIds.isNotEmpty()) {
             Store.state.worldBooks.find { it.id in c.worldBookIds }
         } else null
-        val headerName = ch?.name ?: if (world != null) {
+        val defaultName = ch?.name ?: if (world != null) {
             "${world.name} · ${world.willName.ifBlank { Store.t("worldWill") }}"
-        } else c.title
+        } else "Conversation"
+        // 优先展示用户自定义重命名的对话标题
+        val headerName = c.title.ifBlank { defaultName }
         b.headerTitle.text = headerName
         // 长按标题弹出操作菜单：重命名 / 导出对话记录
         b.headerTitle.setOnLongClickListener {
@@ -165,7 +167,7 @@ class ChatActivity : AppCompatActivity() {
         super.onPause()
         val text = b.etDraft.text?.toString() ?: ""
         conv()?.let {
-            if (it.draftText != text) {
+            if (!busy && it.draftText != text) {
                 it.draftText = text
                 Store.persist()
             }
@@ -175,6 +177,9 @@ class ChatActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         Llm.cancel()
+        // 退出时清理残留的空白失败 assistant 消息，保证消息树整洁
+        val removed = Store.state.messages.removeAll { it.conversationId == convId && it.role == "assistant" && it.content.isBlank() }
+        if (removed) Store.persist()
     }
 
     private fun paintSend() {
@@ -213,6 +218,8 @@ class ChatActivity : AppCompatActivity() {
         b.etDraft.setText("")
         c.draftText = "" // 发送成功，清空已存草稿
         hideKeyboard()  // 发送后立即收起键盘，让消息列表完整显示
+        // 发送新消息前，清理旧的未完成空白 assistant 脏数据
+        Store.state.messages.removeAll { it.conversationId == convId && it.role == "assistant" && it.content.isBlank() }
         val user = ChatMessage(Store.nid(), convId, c.tipMessageId, "user", text, mutableListOf(), 0, Store.now())
         Store.state.messages.add(user)
         val gen = Generation(Store.nid(), "", profile.model, profile.provider, Store.now())
@@ -453,31 +460,35 @@ class ChatActivity : AppCompatActivity() {
         val charName = ch?.name ?: c.title
         val persona = Store.state.personas.find { it.id == c.personaId } ?: Store.state.personas.firstOrNull()
         val userName = persona?.name ?: Store.state.userName.ifBlank { "You" }
-
-        val sb = StringBuilder()
-        sb.append("# ${c.title}\n\n")
-        val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-        sb.append("> Project Tavern 对话记录导出\n")
-        sb.append("> 导出时间：$dateStr\n\n---\n\n")
-
         val msgs = path()
-        for (m in msgs) {
-            val speaker = if (m.role == "assistant") charName else userName
-            val content = if (m.role == "assistant") Engine.display(m) else m.content
-            sb.append("### **$speaker**\n\n")
-            sb.append(content.trim())
-            sb.append("\n\n---\n\n")
-        }
 
-        val safeName = (c.title.ifBlank { "chat" }).replace(Regex("[^\\w\\u4e00-\\u9fff]"), "_")
-        val file = java.io.File(cacheDir, "$safeName.md")
-        file.writeText(sb.toString())
-        val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", file)
-        val share = android.content.Intent(android.content.Intent.ACTION_SEND)
-            .setType("text/markdown")
-            .putExtra(android.content.Intent.EXTRA_STREAM, uri)
-            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        startActivity(android.content.Intent.createChooser(share, Store.t("exportChat")))
+        Thread {
+            val sb = StringBuilder()
+            sb.append("# ${c.title}\n\n")
+            val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+            sb.append("> Project Tavern 对话记录导出\n")
+            sb.append("> 导出时间：$dateStr\n\n---\n\n")
+
+            for (m in msgs) {
+                val speaker = if (m.role == "assistant") charName else userName
+                val content = if (m.role == "assistant") Engine.display(m) else m.content
+                sb.append("### **$speaker**\n\n")
+                sb.append(content.trim())
+                sb.append("\n\n---\n\n")
+            }
+
+            val safeName = (c.title.ifBlank { "chat" }).replace(Regex("[^\\w\\u4e00-\\u9fff]"), "_")
+            val file = java.io.File(cacheDir, "$safeName.md")
+            file.writeText(sb.toString())
+            val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", file)
+            runOnUiThread {
+                val share = android.content.Intent(android.content.Intent.ACTION_SEND)
+                    .setType("text/markdown")
+                    .putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                    .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                startActivity(android.content.Intent.createChooser(share, Store.t("exportChat")))
+            }
+        }.start()
     }
 
     private fun showRenameConversationDialog() {
@@ -549,7 +560,7 @@ class ChatActivity : AppCompatActivity() {
                 body.visibility = View.VISIBLE
                 user.visibility = View.GONE
                 val rawText = Engine.display(m).ifBlank { if (busy && position == items.lastIndex) "…" else "" }
-                body.text = Engine.formatRpText(rawText)
+                body.setText(Engine.formatRpText(rawText), TextView.BufferType.SPANNABLE)
                 val candle = getColor(R.color.candle)
                 val muted = getColor(R.color.muted)
                 val wine = getColor(R.color.wine)
@@ -583,7 +594,7 @@ class ChatActivity : AppCompatActivity() {
                 nameRow.visibility = View.GONE
                 body.visibility = View.GONE
                 user.visibility = View.VISIBLE
-                user.text = Engine.formatRpText(m.content)
+                user.setText(Engine.formatRpText(m.content), TextView.BufferType.SPANNABLE)
                 val muted = getColor(R.color.muted)
                 val wine = getColor(R.color.wine)
                 actions.addView(actionLabel(this@ChatActivity, Store.t("edit"), muted) { showEditMessageDialog(m) })

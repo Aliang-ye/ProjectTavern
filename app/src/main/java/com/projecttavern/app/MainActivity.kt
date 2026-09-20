@@ -90,23 +90,41 @@ class MainActivity : AppCompatActivity() {
         b.statChats.setOnClickListener { b.bottomNav.selectedItemId = R.id.nav_chats }
 
         val searchHandler = android.os.Handler(android.os.Looper.getMainLooper())
-        var searchRunnable: Runnable? = null
+        var searchCharRunnable: Runnable? = null
         b.panelCharacters.search.addTextChangedListener(SimpleWatcher {
-            searchRunnable?.let { searchHandler.removeCallbacks(it) }
+            searchCharRunnable?.let { searchHandler.removeCallbacks(it) }
             val r = Runnable { refreshCharacters() }
-            searchRunnable = r
+            searchCharRunnable = r
+            searchHandler.postDelayed(r, 150)
+        })
+        var searchWorldRunnable: Runnable? = null
+        b.panelWorlds.search.addTextChangedListener(SimpleWatcher {
+            searchWorldRunnable?.let { searchHandler.removeCallbacks(it) }
+            val r = Runnable { refreshWorlds() }
+            searchWorldRunnable = r
+            searchHandler.postDelayed(r, 150)
+        })
+        var searchStoryRunnable: Runnable? = null
+        b.panelStories.search.addTextChangedListener(SimpleWatcher {
+            searchStoryRunnable?.let { searchHandler.removeCallbacks(it) }
+            val r = Runnable { refreshStories() }
+            searchStoryRunnable = r
             searchHandler.postDelayed(r, 150)
         })
         wireSettings()
         show(R.id.nav_characters)
     }
 
+    private var currentNavId: Int = R.id.nav_characters
+
     override fun onResume() {
         super.onResume()
-        refresh()
+        refreshHeaderAndNav()
+        show(currentNavId)
     }
 
     private fun show(id: Int) {
+        currentNavId = id
         b.panelCharacters.root.visibility = goneIf(id != R.id.nav_characters)
         b.panelWorlds.root.visibility = goneIf(id != R.id.nav_worlds)
         b.panelStories.root.visibility = goneIf(id != R.id.nav_stories)
@@ -125,6 +143,11 @@ class MainActivity : AppCompatActivity() {
     private fun goneIf(hide: Boolean) = if (hide) View.GONE else View.VISIBLE
 
     private fun refresh() {
+        refreshHeaderAndNav()
+        show(currentNavId)
+    }
+
+    private fun refreshHeaderAndNav() {
         val loc = Store.state.locale
         b.brand.text = if (loc == "en") "TAVERN" else "暮色酒馆"
         b.tagline.text = Store.t("tagline")
@@ -154,18 +177,15 @@ class MainActivity : AppCompatActivity() {
         setupPanel(b.panelStories, Store.t("stories"), "", true)
         setupPanel(b.panelChats, Store.t("chats"), Store.t("privateHint"), false)
         b.panelCharacters.search.hint = Store.t("search")
-        refreshCharacters()
-        refreshWorlds()
-        refreshStories()
-        refreshChats()
-        refreshSettings()
+        b.panelWorlds.search.hint = Store.t("search")
+        b.panelStories.search.hint = Store.t("search")
     }
 
     private fun setupPanel(p: PanelListBinding, title: String, hint: String, fab: Boolean) {
         p.panelTitle.text = title
         p.panelHint.text = hint
         p.panelHint.visibility = if (hint.isBlank()) View.GONE else View.VISIBLE
-        p.search.visibility = if (p === b.panelCharacters) View.VISIBLE else View.GONE
+        p.search.visibility = if (p !== b.panelChats) View.VISIBLE else View.GONE
         p.fab.visibility = if (fab) View.VISIBLE else View.GONE
         if (p === b.panelCharacters) {
             p.panelAction.visibility = View.VISIBLE
@@ -260,7 +280,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshWorlds() {
-        val worlds = Store.state.worldBooks.sortedWith(compareByDescending<WorldBook> { it.isPinned }.thenByDescending { it.updatedAt })
+        val q = b.panelWorlds.search.text?.toString()?.trim()?.lowercase() ?: ""
+        val worlds = Store.state.worldBooks
+            .filter { q.isEmpty() || it.name.lowercase().contains(q) || it.description.lowercase().contains(q) || it.willName.lowercase().contains(q) }
+            .sortedWith(compareByDescending<WorldBook> { it.isPinned }.thenByDescending { it.updatedAt })
         fill(b.panelWorlds.list) {
             if (worlds.isEmpty()) {
                 val tv = TextView(this)
@@ -307,7 +330,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshStories() {
-        val stories = Store.state.stories.sortedWith(compareByDescending<Story> { it.isPinned }.thenByDescending { it.updatedAt })
+        val q = b.panelStories.search.text?.toString()?.trim()?.lowercase() ?: ""
+        val stories = Store.state.stories
+            .filter { q.isEmpty() || it.name.lowercase().contains(q) || it.description.lowercase().contains(q) }
+            .sortedWith(compareByDescending<Story> { it.isPinned }.thenByDescending { it.updatedAt })
         fill(b.panelStories.list) {
             if (stories.isEmpty()) {
                 val tv = TextView(this)
@@ -364,13 +390,14 @@ class MainActivity : AppCompatActivity() {
                     Store.state.worldBooks.find { it.id in c.worldBookIds }
                 } else null
                 val story = Store.state.stories.find { s -> s.id == c.storyId }
-                // 最后一条消息预览（最多60字）
+                // 最后一条消息预览（最多60字，剥离斜体星号）
                 val lastMsg = Store.state.messages
                     .filter { it.conversationId == c.id }
                     .maxByOrNull { it.createdAt }
                 val lastPreview = if (lastMsg != null) {
                     val text = if (lastMsg.role == "assistant") Engine.display(lastMsg) else lastMsg.content
-                    text.take(60).replace('\n', ' ').let { if (text.length > 60) "$it…" else it }
+                    val cleanText = text.replace("*", "").trim()
+                    cleanText.take(60).replace('\n', ' ').let { if (cleanText.length > 60) "$it…" else it }
                 } else {
                     if (c.storyId == null) {
                         if (world != null) "${world.name} · ${world.willName.ifBlank { Store.t("worldWill") }}" else Store.t("privateChat")

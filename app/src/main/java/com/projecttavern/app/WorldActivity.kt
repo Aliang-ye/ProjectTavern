@@ -56,7 +56,9 @@ class WorldActivity : AppCompatActivity() {
                 finish()
                 return
             }
-            draftWorld = existing.copy()
+            draftWorld = existing.copy(
+                willAlternateGreetings = existing.willAlternateGreetings.toMutableList()
+            )
         }
 
         b = ActivityWorldBinding.inflate(layoutInflater)
@@ -176,6 +178,10 @@ class WorldActivity : AppCompatActivity() {
         b.lWillFirstMsg.text = Store.t("willFirstMessage")
         b.etWillFirstMsg.setText(w.willFirstMessage)
 
+        b.lWillAltMsg.text = Store.t("willAltGreetings")
+        b.etWillAltMsg.hint = Store.t("willAltGreetingsHint")
+        b.etWillAltMsg.setText(w.willAlternateGreetings.joinToString("\n"))
+
         b.lWillPrompt.text = Store.t("willSystemPrompt")
         b.etWillPrompt.setText(w.willSystemPrompt)
 
@@ -273,9 +279,11 @@ class WorldActivity : AppCompatActivity() {
         }
         box.addView(cbConstant)
         val content = field(Store.t("description"), e.content, true)
+        val scroll = android.widget.ScrollView(this)
+        scroll.addView(box)
         AlertDialog.Builder(this)
             .setTitle(Store.t("addEntry"))
-            .setView(box)
+            .setView(scroll)
             .setPositiveButton(Store.t("save")) { _, _ ->
                 e.name = name.text.toString()
                 e.keys = keysEt.text.toString().split(Regex("[,，;；\\s]+")).map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
@@ -312,6 +320,7 @@ class WorldActivity : AppCompatActivity() {
         w.willFirstMessage = b.etWillFirstMsg.text.toString().ifBlank {
             if (Store.state.locale == "en") "Welcome to ${w.name}. Where would you like to begin your journey?" else "「世界的心跳在此刻与你共鸣。你想从何处开启在【${w.name}】的故事？」"
         }
+        w.willAlternateGreetings = b.etWillAltMsg.text.toString().split("\n").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
         w.willSystemPrompt = b.etWillPrompt.text.toString().ifBlank {
             if (Store.state.locale == "en") "You are the World Will and Narrator for ${w.name}. Vividly describe environments, atmosphere, and NPCs. React to {{user}}'s actions, but never speak or act on behalf of {{user}}." else "你是【${w.name}】的【世界意志】与故事讲述者（World Will / Narrator）。\n根据世界法则与设定，生动描绘环境与NPC，推动情节，绝不代替玩家（{{user}}）发言或行动。"
         }

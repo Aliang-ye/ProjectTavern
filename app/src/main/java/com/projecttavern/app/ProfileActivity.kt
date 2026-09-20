@@ -82,7 +82,7 @@ class ProfileActivity : AppCompatActivity() {
                 if (provider == "claude") "https://api.anthropic.com" else "https://api.openai.com/v1"
             }
             val model = b.etModel.text.toString().trim().ifBlank {
-                if (provider == "claude") "claude-sonnet-4-5" else "gpt-4o-mini"
+                if (provider == "claude") "claude-3-5-sonnet-20241022" else "gpt-4o-mini"
             }
             val key = b.etKey.text.toString().replace("\r", "").replace("\n", "").trim()
             val tempProfile = ApiProfile(
@@ -135,7 +135,7 @@ class ProfileActivity : AppCompatActivity() {
             if (b.etEndpoint.text.toString().contains("openai") || b.etEndpoint.text.isNullOrBlank()) {
                 b.etEndpoint.setText("https://api.anthropic.com")
             }
-            if (!b.etModel.text.toString().startsWith("claude")) b.etModel.setText("claude-sonnet-4-5")
+            if (!b.etModel.text.toString().startsWith("claude")) b.etModel.setText("claude-3-5-sonnet-20241022")
         } else {
             if (b.etEndpoint.text.toString().contains("anthropic") || b.etEndpoint.text.isNullOrBlank()) {
                 b.etEndpoint.setText("https://api.openai.com/v1")

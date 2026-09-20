@@ -58,6 +58,7 @@ data class WorldBook(
     var willDescription: String = "",
     var willScenario: String = "",
     var willFirstMessage: String = "",
+    var willAlternateGreetings: MutableList<String> = mutableListOf(),
     var willSystemPrompt: String = "",
     var willAvatar: String? = null,
     var isPinned: Boolean = false,

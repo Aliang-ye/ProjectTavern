@@ -13,8 +13,10 @@ object Store {
         private set
     private lateinit var file: File
     private val listeners = mutableListOf<() -> Unit>()
+    lateinit var appContext: Context
 
     fun init(ctx: Context) {
+        appContext = ctx.applicationContext
         file = File(ctx.filesDir, FILE)
         val raw = if (file.exists()) file.readText() else ""
         state = if (raw.isNotBlank()) {
@@ -108,17 +110,46 @@ object Store {
 
     fun backupJson(): String = gson.toJson(redactedStateForWrite())
 
-    fun exportCharacter(ch: Character): String = gson.toJson(ch)
+    fun exportCharacter(ch: Character): String {
+        val copy = ch.copy(
+            tags = ch.tags.toMutableList(),
+            alternateGreetings = ch.alternateGreetings.toMutableList()
+        )
+        if (!copy.avatar.isNullOrBlank() && !copy.avatar!!.startsWith("data:") && !copy.avatar!!.startsWith("http")) {
+            try {
+                val avatarFile = File(copy.avatar!!)
+                if (avatarFile.exists() && avatarFile.isFile) {
+                    val b64 = android.util.Base64.encodeToString(avatarFile.readBytes(), android.util.Base64.NO_WRAP)
+                    copy.avatar = "data:image/jpeg;base64,$b64"
+                }
+            } catch (_: Exception) {}
+        }
+        return gson.toJson(copy)
+    }
 
     fun importCharacter(jsonStr: String): Character? {
         return try {
             val ch = gson.fromJson(jsonStr.trim(), Character::class.java)
             if (ch != null && ch.name.isNotBlank()) {
+                val timestamp = now()
                 ch.id = nid()
-                ch.createdAt = now()
-                ch.updatedAt = now()
+                ch.createdAt = timestamp
+                ch.updatedAt = timestamp
                 if (ch.tags == null) ch.tags = mutableListOf()
                 if (ch.alternateGreetings == null) ch.alternateGreetings = mutableListOf()
+                // 如果头像为嵌入式 Base64，落地为本地图片文件，确保跨设备导入头像不丢失
+                if (ch.avatar?.startsWith("data:") == true && ::appContext.isInitialized) {
+                    try {
+                        val comma = ch.avatar!!.indexOf(",")
+                        if (comma != -1) {
+                            val b64 = ch.avatar!!.substring(comma + 1)
+                            val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                            val targetFile = File(appContext.filesDir, "avatar_${ch.id}.jpg")
+                            targetFile.writeBytes(bytes)
+                            ch.avatar = targetFile.absolutePath
+                        }
+                    } catch (_: Exception) {}
+                }
                 state.characters.add(0, ch)
                 persist()
                 ch
@@ -146,6 +177,7 @@ object Store {
     fun startWorldWillConversation(worldBookId: String): String? {
         val w = state.worldBooks.find { it.id == worldBookId } ?: return null
         val willName = w.willName.ifBlank { if (state.locale == "en") "World Will" else "世界意志" }
+        val timestamp = now()
         val conv = Conversation(
             id = nid(),
             storyId = null,
@@ -154,24 +186,30 @@ object Store {
             presetId = state.presets.firstOrNull { it.locale == state.locale }?.id ?: state.presets.firstOrNull()?.id ?: "preset-default",
             personaId = state.activePersonaId,
             title = "${w.name} · $willName",
-            createdAt = now(),
-            updatedAt = now(),
+            createdAt = timestamp,
+            updatedAt = timestamp,
         )
         val persona = state.personas.find { it.id == conv.personaId } ?: state.personas.firstOrNull()
         val userName = persona?.name?.ifBlank { null } ?: state.userName.ifBlank { if (state.locale == "en") "You" else "你" }
         val rawGreeting = w.willFirstMessage.ifBlank {
             if (state.locale == "en") "Welcome to ${w.name}." else "「欢迎来到【${w.name}】。世界的心跳在此刻与你共鸣，你想从何处开启你的故事？」"
         }
-        val greeting = Engine.fillMacros(rawGreeting, userName, willName)
+        val allGreetings = (listOf(rawGreeting).filter { it.isNotBlank() } + w.willAlternateGreetings.filter { it.isNotBlank() })
+        val greetingStrings = if (allGreetings.isEmpty()) listOf(rawGreeting) else allGreetings
+        val generations = greetingStrings.map { gText ->
+            val filled = Engine.fillMacros(gText, userName, willName)
+            Generation(nid(), filled, "greeting", "local", timestamp)
+        }.toMutableList()
+        val firstContent = generations[0].content
         val greet = ChatMessage(
             id = nid(),
             conversationId = conv.id,
             parentId = null,
             role = "assistant",
-            content = greeting,
-            generations = mutableListOf(Generation(nid(), greeting, "greeting", "local", now())),
+            content = firstContent,
+            generations = generations,
             generationIndex = 0,
-            createdAt = now(),
+            createdAt = timestamp,
         )
         conv.tipMessageId = greet.id
         state.conversations.add(0, conv)
@@ -183,6 +221,7 @@ object Store {
     fun startConversation(characterId: String? = null, storyId: String? = null, personaId: String? = null): String? {
         val story = if (storyId != null) state.stories.find { it.id == storyId } else null
         val effectivePresetId = state.presets.firstOrNull { it.locale == state.locale }?.id ?: state.presets.firstOrNull()?.id ?: "preset-default"
+        val timestamp = now()
         if (characterId.isNullOrBlank() && storyId != null) {
             val main = state.participants.find { it.storyId == storyId && it.role == "MAIN_CHARACTER" }
                 ?: state.participants.firstOrNull { it.storyId == storyId }
@@ -200,22 +239,28 @@ object Store {
                     presetId = effectivePresetId,
                     personaId = personaId ?: story?.personaId ?: state.activePersonaId,
                     title = "${story?.name ?: "Story"} · $willName",
-                    createdAt = now(),
-                    updatedAt = now(),
+                    createdAt = timestamp,
+                    updatedAt = timestamp,
                 )
                 val persona = state.personas.find { it.id == conv.personaId } ?: state.personas.firstOrNull()
                 val userName = persona?.name?.ifBlank { null } ?: state.userName.ifBlank { if (state.locale == "en") "You" else "你" }
                 val rawGreeting = world?.willFirstMessage?.ifBlank { null } ?: if (state.locale == "en") "The story begins in ${world?.name ?: "this world"}." else "「故事在【${world?.name ?: "这个世界"}】拉开帷幕。你打算迈向何方？」"
-                val greeting = Engine.fillMacros(rawGreeting, userName, willName)
+                val allGreetings = (listOf(rawGreeting).filter { it.isNotBlank() } + (world?.willAlternateGreetings ?: emptyList()).filter { it.isNotBlank() })
+                val greetingStrings = if (allGreetings.isEmpty()) listOf(rawGreeting) else allGreetings
+                val generations = greetingStrings.map { gText ->
+                    val filled = Engine.fillMacros(gText, userName, willName)
+                    Generation(nid(), filled, "greeting", "local", timestamp)
+                }.toMutableList()
+                val firstContent = generations[0].content
                 val greet = ChatMessage(
                     id = nid(),
                     conversationId = conv.id,
                     parentId = null,
                     role = "assistant",
-                    content = greeting,
-                    generations = mutableListOf(Generation(nid(), greeting, "greeting", "local", now())),
+                    content = firstContent,
+                    generations = generations,
                     generationIndex = 0,
-                    createdAt = now(),
+                    createdAt = timestamp,
                 )
                 conv.tipMessageId = greet.id
                 state.conversations.add(0, conv)
@@ -239,8 +284,8 @@ object Store {
             presetId = effectivePresetId,
             personaId = personaId ?: story?.personaId ?: state.activePersonaId,
             title = if (story != null) "${story.name} · ${ch.name}" else ch.name,
-            createdAt = now(),
-            updatedAt = now(),
+            createdAt = timestamp,
+            updatedAt = timestamp,
         )
         val persona = state.personas.find { it.id == conv.personaId } ?: state.personas.firstOrNull()
         val userName = persona?.name?.ifBlank { null } ?: state.userName.ifBlank { if (state.locale == "en") "You" else "你" }
@@ -249,7 +294,7 @@ object Store {
         val greetingStrings = if (allGreetings.isEmpty()) listOf(if (state.locale == "en") "Hello." else "你好。") else allGreetings
         val generations = greetingStrings.map { gText ->
             val filled = Engine.fillMacros(gText, userName, ch.name)
-            Generation(nid(), filled, "greeting", "local", now())
+            Generation(nid(), filled, "greeting", "local", timestamp)
         }.toMutableList()
         val firstContent = generations[0].content
         val greet = ChatMessage(
@@ -260,7 +305,7 @@ object Store {
             content = firstContent,
             generations = generations,
             generationIndex = 0,
-            createdAt = now(),
+            createdAt = timestamp,
         )
         conv.tipMessageId = greet.id
         state.conversations.add(0, conv)
@@ -290,11 +335,15 @@ object Store {
             if (it.tags == null) it.tags = mutableListOf()
             if (it.alternateGreetings == null) it.alternateGreetings = mutableListOf()
         }
+        state.worldBooks.forEach {
+            if (it.willAlternateGreetings == null) it.willAlternateGreetings = mutableListOf()
+        }
         state.stories.forEach {
             if (it.worldBookIds == null) it.worldBookIds = mutableListOf()
         }
         state.conversations.forEach {
             if (it.worldBookIds == null) it.worldBookIds = mutableListOf()
+            if (it.draftText == null) it.draftText = ""
         }
         state.messages.forEach {
             if (it.generations == null) it.generations = mutableListOf()
