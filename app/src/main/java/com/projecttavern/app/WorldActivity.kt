@@ -250,6 +250,7 @@ class WorldActivity : AppCompatActivity() {
         val entries = if (isNew) draftEntries else Store.state.entries.filter { it.worldBookId == id }
         entries.sortedByDescending { it.priority }.forEach { e ->
             val meta = buildString {
+                if (!e.enabled) append("off ")
                 if (e.constant) append("★ ${Store.t("constant")}") else append("p${e.priority}")
                 if (e.probability < 100) append(" ${e.probability}%")
             }
@@ -278,8 +279,16 @@ class WorldActivity : AppCompatActivity() {
         val name = field(Store.t("name"), e.name)
         val keysEt = field(Store.t("tags"), e.keys.joinToString(","))
         val secondaryEt = field(Store.t("secondaryKeys"), e.secondaryKeys.joinToString(","))
+        val priorityEt = field(Store.t("priorityHint"), e.priority.toString())
         val probabilityEt = field(Store.t("probability"), e.probability.toString())
         val positionEt = field(Store.t("insertPos"), e.insertionPosition)
+        val cbEnabled = CheckBox(this).apply {
+            text = Store.t("enabledEntry")
+            isChecked = e.enabled
+            setTextColor(getColor(R.color.ink))
+            setPadding(dp(4), dp(6), dp(4), dp(6))
+        }
+        box.addView(cbEnabled)
         val cbConstant = CheckBox(this).apply {
             text = Store.t("constantEntry")
             isChecked = e.constant
@@ -294,11 +303,13 @@ class WorldActivity : AppCompatActivity() {
             .setTitle(Store.t("addEntry"))
             .setView(scroll)
             .setPositiveButton(Store.t("save")) { _, _ ->
-                e.name = name.text.toString()
+                e.name = name.text.toString().ifBlank { Store.t("addEntry") }
                 e.keys = keysEt.text.toString().split(Regex("[,，;；\\s]+")).map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
                 e.secondaryKeys = secondaryEt.text.toString().split(Regex("[,，;；\\s]+")).map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                e.priority = priorityEt.text.toString().toIntOrNull() ?: 50
                 e.probability = probabilityEt.text.toString().toIntOrNull()?.coerceIn(0, 100) ?: 100
                 e.insertionPosition = if (positionEt.text.toString().contains("before")) "before_char" else "after_char"
+                e.enabled = cbEnabled.isChecked
                 e.constant = cbConstant.isChecked
                 e.content = content.text.toString()
                 if (isNew) {

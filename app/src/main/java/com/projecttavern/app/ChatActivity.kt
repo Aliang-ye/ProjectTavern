@@ -78,46 +78,12 @@ class ChatActivity : AppCompatActivity() {
             if (busy) stop()
             else if (b.etDraft.text.toString().isBlank()) {
                 Toast.makeText(this, Store.t("writeAction"), Toast.LENGTH_SHORT).show()
+            } else {
+                send()
             }
             true
         }
-        // 重试按钮：出错后一键用上次失败的 assistant 消息重新生成
-        b.btnRetry.setOnClickListener {
-            val failed = lastFailedAsst ?: return@setOnClickListener
-            lastFailedAsst = null
-            b.btnRetry.visibility = View.GONE
-            b.err.visibility = View.GONE
-            // 清空已失败的空内容 assistant 消息，重新生成
-            if (failed.content.isBlank()) {
-                Store.state.messages.removeAll { it.id == failed.id }
-                if (conv()?.tipMessageId == failed.id) conv()?.tipMessageId = failed.parentId
-                Store.persist()
-                refresh()
-                // 取上一条 user 消息触发重新生成
-                val parentUserMsg = Store.state.messages.find { it.id == failed.parentId }
-                if (parentUserMsg != null) {
-                    val profile = Store.profileFor(conv()) ?: return@setOnClickListener
-                    val gen = Generation(Store.nid(), "", profile.model, profile.provider, Store.now())
-                    val newAsst = ChatMessage(Store.nid(), convId, parentUserMsg.id, "assistant", "", mutableListOf(gen), 0, Store.now())
-                    Store.state.messages.add(newAsst)
-                    conv()?.tipMessageId = newAsst.id
-                    conv()?.updatedAt = Store.now()
-                    Store.persist()
-                    refresh()
-                    generate(newAsst, parentUserMsg.id)
-                }
-            } else {
-                val profile = Store.profileFor(conv()) ?: return@setOnClickListener
-                val current = failed.generations.getOrNull(failed.generationIndex)
-                if (current != null && failed.content.isNotBlank()) current.content = failed.content
-                failed.generations.add(Generation(Store.nid(), "", profile.model, profile.provider, Store.now()))
-                failed.generationIndex = failed.generations.lastIndex
-                failed.content = ""
-                Store.persist()
-                refresh()
-                generate(failed, failed.parentId)
-            }
-        }
+        b.btnRetry.setOnClickListener { retryLastFailed() }
         if (Store.state.developerMode) {
             debugOn = true
             b.debugBox.visibility = View.VISIBLE
@@ -144,7 +110,7 @@ class ChatActivity : AppCompatActivity() {
         } else null
         val defaultName = ch?.name ?: if (world != null) {
             "${world.name} · ${world.willName.ifBlank { Store.t("worldWill") }}"
-        } else "Conversation"
+        } else Store.t("chats")
         // 优先展示用户自定义重命名的对话标题
         val headerName = c.title.ifBlank { defaultName }
         b.headerTitle.text = headerName
@@ -181,7 +147,7 @@ class ChatActivity : AppCompatActivity() {
         super.onPause()
         val text = b.etDraft.text?.toString() ?: ""
         conv()?.let {
-            if (!busy && it.draftText != text) {
+            if (it.draftText != text) {
                 it.draftText = text
                 Store.persist()
             }
@@ -522,6 +488,48 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
+
+    private fun retryLastFailed() {
+        val failed = lastFailedAsst ?: return
+        val profile = Store.profileFor(conv())
+        if (profile == null || profile.apiKey.isBlank()) {
+            askNeedProfile()
+            return
+        }
+        lastFailedAsst = null
+        b.btnRetry.visibility = View.GONE
+        b.err.visibility = View.GONE
+        if (failed.content.isBlank()) {
+            Store.state.messages.removeAll { it.id == failed.id }
+            if (conv()?.tipMessageId == failed.id) conv()?.tipMessageId = failed.parentId
+            val parentUserMsg = Store.state.messages.find { it.id == failed.parentId }
+            if (parentUserMsg == null) {
+                Store.persist()
+                refresh()
+                return
+            }
+            val newAsst = ChatMessage(
+                Store.nid(), convId, parentUserMsg.id, "assistant", "",
+                mutableListOf(Generation(Store.nid(), "", profile.model, profile.provider, Store.now())),
+                0, Store.now(),
+            )
+            Store.state.messages.add(newAsst)
+            conv()?.tipMessageId = newAsst.id
+            conv()?.updatedAt = Store.now()
+            Store.persist()
+            refresh()
+            generate(newAsst, parentUserMsg.id)
+        } else {
+            val current = failed.generations.getOrNull(failed.generationIndex)
+            if (current != null && failed.content.isNotBlank()) current.content = failed.content
+            failed.generations.add(Generation(Store.nid(), "", profile.model, profile.provider, Store.now()))
+            failed.generationIndex = failed.generations.lastIndex
+            failed.content = ""
+            Store.persist()
+            refresh()
+            generate(failed, failed.parentId)
+        }
+    }
 
     private fun askNeedProfile() {
         androidx.appcompat.app.AlertDialog.Builder(this)

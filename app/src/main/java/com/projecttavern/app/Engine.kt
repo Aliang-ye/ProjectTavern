@@ -63,12 +63,17 @@ object Engine {
     }
 
     fun leafOf(message: ChatMessage): ChatMessage {
-        val msgs = Store.state.messages.filter { it.conversationId == message.conversationId }
+        val latestChild = HashMap<String, ChatMessage>()
+        for (m in Store.state.messages) {
+            val parent = m.parentId ?: continue
+            if (m.conversationId != message.conversationId) continue
+            val prev = latestChild[parent]
+            if (prev == null || m.createdAt >= prev.createdAt) latestChild[parent] = m
+        }
         var cur = message
         val guard = mutableSetOf<String>()
         while (guard.add(cur.id)) {
-            val child = msgs.filter { it.parentId == cur.id }.maxByOrNull { it.createdAt } ?: break
-            cur = child
+            cur = latestChild[cur.id] ?: break
         }
         return cur
     }

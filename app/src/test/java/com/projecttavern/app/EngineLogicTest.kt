@@ -45,6 +45,9 @@ class EngineLogicTest {
         assertEquals("ar", Engine.leafOf(a).id)
         assertEquals("b", Engine.leafOf(b).id)
         assertEquals(listOf("a", "b"), Engine.siblings(a).map { it.id })
+        val extra = ChatMessage(id = "bx", conversationId = conv, parentId = "b", role = "assistant", content = "B reply", createdAt = 5)
+        Store.state.messages.add(extra)
+        assertEquals("bx", Engine.leafOf(root).id)
     }
 
     @Test

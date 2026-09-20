@@ -29,54 +29,16 @@ class ProfileActivity : AppCompatActivity() {
                 finish()
             }
         }
-        b.chipDeepseek.setOnClickListener {
-            setProvider("openai")
-            b.etEndpoint.setText("https://api.deepseek.com/v1")
-            b.etModel.setText("deepseek-chat")
-            if (b.etName.text.isNullOrBlank() || b.etName.text.toString().startsWith("Profile")) {
-                b.etName.setText("DeepSeek")
-            }
-        }
-        b.chipSilicon.setOnClickListener {
-            setProvider("openai")
-            b.etEndpoint.setText("https://api.siliconflow.cn/v1")
-            b.etModel.setText("deepseek-ai/DeepSeek-V3")
-            if (b.etName.text.isNullOrBlank() || b.etName.text.toString().startsWith("Profile")) {
-                b.etName.setText("SiliconFlow")
-            }
-        }
-        b.chipZhipu.setOnClickListener {
-            setProvider("openai")
-            b.etEndpoint.setText("https://open.bigmodel.cn/api/paas/v4")
-            b.etModel.setText("glm-4-flash")
-            if (b.etName.text.isNullOrBlank() || b.etName.text.toString().startsWith("Profile")) {
-                b.etName.setText("智谱 GLM")
-            }
-        }
+        b.chipDeepseek.setOnClickListener { fillProviderChip("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat") }
+        b.chipSilicon.setOnClickListener { fillProviderChip("SiliconFlow", "https://api.siliconflow.cn/v1", "deepseek-ai/DeepSeek-V3") }
+        b.chipZhipu.setOnClickListener { fillProviderChip("智谱 GLM", "https://open.bigmodel.cn/api/paas/v4", "glm-4-flash") }
         b.chipOllama.setOnClickListener {
-            setProvider("openai")
-            b.etEndpoint.setText("http://192.168.1.8:11434/v1")
-            b.etModel.setText("qwen2.5:7b")
-            if (b.etName.text.isNullOrBlank() || b.etName.text.toString().startsWith("Profile")) {
-                b.etName.setText("Ollama")
-            }
+            fillProviderChip("Ollama", "http://192.168.1.8:11434/v1", "qwen2.5:7b")
             android.widget.Toast.makeText(this, Store.t("ollamaHint"), android.widget.Toast.LENGTH_LONG).show()
         }
-        b.chipOpenai.setOnClickListener {
-            setProvider("openai")
-            b.etEndpoint.setText("https://api.openai.com/v1")
-            b.etModel.setText("gpt-4o-mini")
-            if (b.etName.text.isNullOrBlank() || b.etName.text.toString().startsWith("Profile")) {
-                b.etName.setText("OpenAI")
-            }
-        }
+        b.chipOpenai.setOnClickListener { fillProviderChip("OpenAI", "https://api.openai.com/v1", "gpt-4o-mini") }
         b.chipGemini.setOnClickListener {
-            setProvider("openai")
-            b.etEndpoint.setText("https://generativelanguage.googleapis.com/v1beta/openai")
-            b.etModel.setText("gemini-2.0-flash")
-            if (b.etName.text.isNullOrBlank() || b.etName.text.toString().startsWith("Profile")) {
-                b.etName.setText("Gemini")
-            }
+            fillProviderChip("Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.0-flash")
             android.widget.Toast.makeText(this, Store.t("geminiHint"), android.widget.Toast.LENGTH_LONG).show()
         }
         b.chipOllama.setOnLongClickListener {
@@ -149,6 +111,22 @@ class ProfileActivity : AppCompatActivity() {
         b.lKey.text = Store.t("apiKey"); b.etKey.setText(p.apiKey)
         b.btnDelete.text = Store.t("delete")
         paintProvider()
+    }
+
+    private fun fillProviderChip(name: String, endpoint: String, model: String) {
+        setProvider("openai")
+        b.etEndpoint.setText(endpoint)
+        b.etModel.setText(model)
+        if (shouldReplaceProfileName(b.etName.text?.toString().orEmpty())) {
+            b.etName.setText(name)
+        }
+    }
+
+    private fun shouldReplaceProfileName(current: String): Boolean {
+        val n = current.trim()
+        if (n.isEmpty() || n.startsWith("Profile")) return true
+        val stock = setOf("OpenAI", "OpenAI 兼容", "Claude", "DeepSeek", "SiliconFlow", "智谱 GLM", "Ollama", "Gemini")
+        return stock.any { it.equals(n, ignoreCase = true) }
     }
 
     private fun setProvider(kind: String) {
