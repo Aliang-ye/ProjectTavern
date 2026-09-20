@@ -641,9 +641,12 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 val avatar = ch?.avatar ?: world?.willAvatar
+                val defaultTitle = ch?.name ?: if (world != null) {
+                    "${world.name} · ${world.willName.ifBlank { Store.t("worldWill") }}"
+                } else story?.name ?: Store.t("chats")
                 inflateSwipeRow(
                     it,
-                    title = c.title,
+                    title = c.title.ifBlank { defaultTitle },
                     subtitle = lastPreview,
                     meta = Store.t("open"),
                     avatarPath = avatar,

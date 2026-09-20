@@ -134,6 +134,13 @@ class EngineLogicTest {
     }
 
     @Test
+    fun visibleWithNullTipIsEmptyForRootRegenerate() {
+        val convId = "root-regen"
+        Store.state.messages.add(ChatMessage(id = "root", conversationId = convId, role = "assistant", content = "greeting"))
+        assertTrue(Engine.visible(convId, null).isEmpty())
+    }
+
+    @Test
     fun regeneratePromptStopsAtRequestedTip() {
         val convId = "regen"
         val greet = ChatMessage(id = "g", conversationId = convId, parentId = null, role = "assistant", content = "你好", createdAt = 1)

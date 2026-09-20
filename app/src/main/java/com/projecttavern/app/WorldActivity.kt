@@ -308,7 +308,8 @@ class WorldActivity : AppCompatActivity() {
                 e.secondaryKeys = secondaryEt.text.toString().split(Regex("[,，;；\\s]+")).map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
                 e.priority = priorityEt.text.toString().toIntOrNull() ?: 50
                 e.probability = probabilityEt.text.toString().toIntOrNull()?.coerceIn(0, 100) ?: 100
-                e.insertionPosition = if (positionEt.text.toString().contains("before")) "before_char" else "after_char"
+                val position = positionEt.text.toString().trim().lowercase()
+                e.insertionPosition = if (position.contains("before") || position.contains("前")) "before_char" else "after_char"
                 e.enabled = cbEnabled.isChecked
                 e.constant = cbConstant.isChecked
                 e.content = content.text.toString()

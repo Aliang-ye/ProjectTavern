@@ -370,6 +370,7 @@ class ChatActivity : AppCompatActivity() {
         m.generations.add(gen)
         m.generationIndex = m.generations.lastIndex
         m.content = ""
+        conv()?.updatedAt = Store.now()
         Store.persist()
         refresh()
         generate(m, m.parentId)
@@ -433,6 +434,7 @@ class ChatActivity : AppCompatActivity() {
                             asst.content += full
                         }
                     }
+                    conv()?.updatedAt = Store.now()
                     Store.persist()
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     busy = false
@@ -490,6 +492,7 @@ class ChatActivity : AppCompatActivity() {
                     } else {
                         m.content = newText
                     }
+                    conv()?.updatedAt = Store.now()
                     // 不修改 createdAt，保留原始时间戳，避免打乱消息顺序
                     Store.persist()
                     refresh()
