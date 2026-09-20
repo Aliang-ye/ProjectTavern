@@ -421,10 +421,8 @@ class MainActivity : AppCompatActivity() {
                             Store.state.characters.removeAll { it.id == c.id }
                             Store.state.characterWorldBooks.removeAll { it.characterId == c.id }
                             Store.state.participants.removeAll { it.characterId == c.id }
-                            val removedConvs = Store.state.conversations.filter { it.characterId == c.id && it.storyId == null }
-                            val removedIds = removedConvs.map { it.id }.toSet()
-                            Store.state.messages.removeAll { it.conversationId in removedIds }
-                            Store.state.conversations.removeAll { it.id in removedIds }
+                            val removedIds = Store.state.conversations.filter { it.characterId == c.id && it.storyId == null }.map { it.id }.toSet()
+                            Store.deleteConversations(removedIds)
                             Store.persist()
                             refresh()
                         }
@@ -594,8 +592,7 @@ class MainActivity : AppCompatActivity() {
                     },
                     onDelete = {
                         confirm(this@MainActivity, Store.t("deleteQ")) {
-                            Store.state.conversations.removeAll { it.id == c.id }
-                            Store.state.messages.removeAll { it.conversationId == c.id }
+                            Store.deleteConversation(c.id)
                             Store.persist()
                             refreshChats()
                         }

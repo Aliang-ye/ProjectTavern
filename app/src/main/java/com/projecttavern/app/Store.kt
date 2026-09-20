@@ -135,6 +135,9 @@ object Store {
     }
 
     fun reset() {
+        if (::appContext.isInitialized) {
+            appContext.getSharedPreferences("tavern_secrets", Context.MODE_PRIVATE).edit().clear().apply()
+        }
         state = seed()
         persist()
     }
@@ -325,6 +328,17 @@ object Store {
         return state.conversations
             .filter { it.storyId == null && it.characterId.isBlank() && worldBookId in it.worldBookIds }
             .maxByOrNull { it.updatedAt }
+    }
+
+    fun deleteConversation(id: String) {
+        deleteConversations(setOf(id))
+    }
+
+    fun deleteConversations(ids: Set<String>) {
+        if (ids.isEmpty()) return
+        state.conversations.removeAll { it.id in ids }
+        state.messages.removeAll { it.conversationId in ids }
+        state.memories.removeAll { it.conversationId in ids }
     }
 
     fun startConversation(characterId: String? = null, storyId: String? = null, personaId: String? = null): String? {

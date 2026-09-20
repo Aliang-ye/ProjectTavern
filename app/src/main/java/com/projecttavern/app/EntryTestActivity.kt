@@ -17,12 +17,12 @@ class EntryTestActivity : AppCompatActivity() {
         b.btnBack.setOnClickListener { finish() }
         b.btnRun.setOnClickListener {
             val entries = Store.state.entries.filter { it.worldBookId == id }
-            val hits = Engine.matchEntries(b.etContext.text.toString(), entries)
+            val hits = Engine.matchEntries(b.etContext.text.toString(), entries, roll = false)
             val w = Store.state.worldBooks.find { it.id == id }
             val lore = w?.let { Engine.lore(it) }.orEmpty()
             b.result.text = buildString {
                 if (lore.isNotBlank()) append(lore).append("\n\n")
-                if (hits.isEmpty()) append(Store.t("entryTestHint"))
+                if (hits.isEmpty()) append(Store.t("entryTestNone"))
                 hits.forEach { e ->
                     append("• ").append(e.name).append(" (p").append(e.priority).append(")\n")
                     append(e.content).append("\n\n")

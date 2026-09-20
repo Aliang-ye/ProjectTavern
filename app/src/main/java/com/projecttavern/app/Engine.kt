@@ -263,10 +263,9 @@ object Engine {
         val messages = mutableListOf("system" to sys.toString().trim())
         for (m in contextHistory) {
             val text = if (m.role == "assistant") display(m).trim() else m.content.trim()
-            if (text.isNotBlank()) {
-                val role = if (m.role == "assistant") "assistant" else "user"
-                messages.add(role to text)
-            }
+            if (text.isBlank()) continue
+            val role = if (m.role == "assistant") "assistant" else "user"
+            messages.add(role to text)
         }
         val debug = buildString {
             appendLine("blocks=${messages.size} worlds=${worlds.size} entries=${entries.size} history=${contextHistory.size}/${history.size}")

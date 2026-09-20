@@ -55,13 +55,10 @@ object Cards {
                         CardImport(character = ch)
                     }
                 }
-                else -> {
-                    val ch = Store.importCharacter(text)
-                    CardImport(character = ch)
-                }
+                else -> CardImport()
             }
         } catch (_: Exception) {
-            CardImport(character = Store.importCharacter(text))
+            CardImport()
         }
     }
 

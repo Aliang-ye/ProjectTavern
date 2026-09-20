@@ -24,6 +24,7 @@ class ProfileActivity : AppCompatActivity() {
             confirm(this, Store.t("deleteQ")) {
                 Store.state.profiles.removeAll { it.id == id }
                 if (Store.state.activeProfileId == id) Store.state.activeProfileId = Store.state.profiles.firstOrNull()?.id
+                Secrets.remove(this, id)
                 Store.persist()
                 finish()
             }

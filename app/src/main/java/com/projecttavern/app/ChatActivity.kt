@@ -28,6 +28,7 @@ class ChatActivity : AppCompatActivity() {
     private val uiHandler = Handler(Looper.getMainLooper())
     private var throttlePending = false
     private var streamTarget: ChatMessage? = null
+    private var generateToken = 0
 
     // 智能自动滚动：记录用户是否在底部
     private var userAtBottom = true
@@ -245,7 +246,19 @@ class ChatActivity : AppCompatActivity() {
         c.draftText = "" // 发送成功，清空已存草稿
         hideKeyboard()  // 发送后立即收起键盘，让消息列表完整显示
         // 发送新消息前，清理旧的未完成空白 assistant 脏数据
-        Store.state.messages.removeAll { it.conversationId == convId && it.role == "assistant" && it.content.isBlank() && it.generations.all { g -> g.content.isBlank() } }
+        val blankIds = Store.state.messages
+            .filter { it.conversationId == convId && it.role == "assistant" && it.content.isBlank() && it.generations.all { g -> g.content.isBlank() } }
+            .map { it.id }
+            .toSet()
+        if (blankIds.isNotEmpty()) {
+            Store.state.messages.removeAll { it.id in blankIds }
+            if (c.tipMessageId in blankIds) {
+                c.tipMessageId = Store.state.messages
+                    .filter { it.conversationId == convId }
+                    .maxByOrNull { it.createdAt }
+                    ?.id
+            }
+        }
         val user = ChatMessage(Store.nid(), convId, c.tipMessageId, "user", text, mutableListOf(), 0, Store.now())
         Store.state.messages.add(user)
         val gen = Generation(Store.nid(), "", profile.model, profile.provider, Store.now())
@@ -274,8 +287,10 @@ class ChatActivity : AppCompatActivity() {
             paintSend()
             return
         }
+        if (busy) Llm.cancel()
         busy = true
         streamTarget = asst
+        val token = ++generateToken
         throttlePending = false
         paintSend()
         b.err.visibility = View.GONE
@@ -283,6 +298,7 @@ class ChatActivity : AppCompatActivity() {
             try {
                 val built = Engine.build(convId, fallbackTipId ?: asst.parentId)
                 val full = Llm.stream(profile, built.messages, preset, { piece ->
+                    if (token != generateToken) return@stream
                     if (!Store.state.streaming) return@stream
                     val g = asst.generations.getOrNull(asst.generationIndex) ?: return@stream
                     g.content += piece
@@ -301,6 +317,7 @@ class ChatActivity : AppCompatActivity() {
                     }
                 }, Store.state.streaming)
                 runOnUiThread {
+                    if (token != generateToken) return@runOnUiThread
                     val g = asst.generations.getOrNull(asst.generationIndex) ?: asst.generations.lastOrNull()
                     if (g != null) {
                         if (full.isNotBlank()) g.content = full
@@ -321,6 +338,7 @@ class ChatActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
+                    if (token != generateToken) return@runOnUiThread
                     if (e.message != "CANCELLED" || asst.content.isNotBlank()) Store.persist()
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     busy = false
@@ -342,9 +360,12 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun stop() {
+        generateToken++
         Llm.cancel()
         busy = false
+        streamTarget = null
         paintSend()
+        Store.persist()
     }
 
     private fun regenerate(m: ChatMessage) {
@@ -353,6 +374,7 @@ class ChatActivity : AppCompatActivity() {
             toast(Store.t("needProfile"))
             return
         }
+        if (busy) Llm.cancel()
         // 重写前先将当前最新展示文本保存在对应 generation 中，保证切换分支不丢失前次输出
         val currentGen = m.generations.getOrNull(m.generationIndex)
         if (currentGen != null && m.content.isNotBlank()) {
@@ -377,8 +399,11 @@ class ChatActivity : AppCompatActivity() {
         val preset = Store.state.presets.find { it.id == conv()?.presetId }
             ?: Store.localePresets().firstOrNull()
             ?: Store.state.presets.firstOrNull()
-        if (preset == null || busy) return
+        if (preset == null) return
+        if (busy) Llm.cancel()
         busy = true
+        streamTarget = asst
+        val token = ++generateToken
         paintSend()
         b.err.visibility = View.GONE
         val promptBuilt = Engine.build(convId, asst.id)
@@ -393,13 +418,10 @@ class ChatActivity : AppCompatActivity() {
             try {
                 val full = Llm.stream(profile, messages, preset, { piece ->
                     if (!Store.state.streaming) return@stream
-                    val g = asst.generations.getOrNull(asst.generationIndex)
-                    if (g != null) {
-                        g.content += piece
-                        asst.content = g.content
-                    } else {
-                        asst.content += piece
-                    }
+                    if (token != generateToken) return@stream
+                    val g = asst.generations.getOrNull(asst.generationIndex) ?: return@stream
+                    g.content += piece
+                    asst.content = g.content
                     if (!throttlePending) {
                         throttlePending = true
                         uiHandler.postDelayed({
@@ -414,6 +436,7 @@ class ChatActivity : AppCompatActivity() {
                     }
                 }, Store.state.streaming)
                 runOnUiThread {
+                    if (token != generateToken) return@runOnUiThread
                     val g = asst.generations.getOrNull(asst.generationIndex)
                     if (full.isNotBlank()) {
                         if (g != null) {
@@ -432,9 +455,11 @@ class ChatActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
+                    if (token != generateToken) return@runOnUiThread
                     Store.persist()
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     busy = false
+                    streamTarget = null
                     paintSend()
                     if (e.message == "CANCELLED") return@runOnUiThread
                     b.err.visibility = View.VISIBLE

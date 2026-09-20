@@ -116,10 +116,8 @@ class CharacterActivity : AppCompatActivity() {
                 Store.state.characters.removeAll { it.id == id }
                 Store.state.characterWorldBooks.removeAll { it.characterId == id }
                 Store.state.participants.removeAll { it.characterId == id }
-                val removedConvs = Store.state.conversations.filter { it.characterId == id && it.storyId == null }
-                val removedIds = removedConvs.map { it.id }.toSet()
-                Store.state.messages.removeAll { it.conversationId in removedIds }
-                Store.state.conversations.removeAll { it.id in removedIds }
+                val removedIds = Store.state.conversations.filter { it.characterId == id && it.storyId == null }.map { it.id }.toSet()
+                Store.deleteConversations(removedIds)
                 Store.persist()
                 finish()
             }
