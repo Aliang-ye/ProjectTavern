@@ -175,12 +175,12 @@ object Engine {
         return listOf("system" to instruction, "user" to body)
     }
 
-    fun build(conversationId: String, tipMessageId: String? = null): PromptBuilt {
+    fun build(conversationId: String, tipMessageId: String? = null, followConversationTip: Boolean = true): PromptBuilt {
         val s = Store.state
         val conv = s.conversations.find { it.id == conversationId } ?: return PromptBuilt(emptyList(), "")
         val ch = s.characters.find { it.id == conv.characterId }
         val preset = s.presets.find { it.id == conv.presetId } ?: Store.localePresets().firstOrNull()
-        val effectiveTip = tipMessageId ?: conv.tipMessageId
+        val effectiveTip = tipMessageId ?: if (followConversationTip) conv.tipMessageId else null
         val history = visible(conversationId, effectiveTip)
         val worldIds = if (conv.worldBookIds.isNotEmpty()) conv.worldBookIds else {
             s.characterWorldBooks.filter { it.characterId == conv.characterId }.map { it.worldBookId }

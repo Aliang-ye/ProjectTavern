@@ -6,7 +6,18 @@
 
 App **不提供推理、不做 API 中转、没有账号、没有云同步**。Key 存在本机 Android Keystore，明文不会进 `tavern.json`。
 
-当前构建：**v2.0.0**（首次配置向导、PNG 角色卡、世界书完整匹配、自动记忆、对话分叉与搜索、Keystore 密钥、备份带头像）
+当前构建：**v2.1.0**（重写不再藏后续对话、草稿与重试更稳、世界书优先级可编辑、上下文给系统提示留额度）
+
+## 版本说明 (v2.1.0)
+
+1. **重写中间回复不再把后面藏起来**：tip 仍停在当前分支，后续回合还在。
+2. **重写开场白不会把后面剧情塞进提示词**：生成只看到被重写那一条之前的上下文。
+3. **草稿、重试、长按发送**：生成中切走也会保存输入；没配 Key 时重试不会先删失败回复。
+4. **世界书条目能改优先级和启用**；关掉的故事参与者不再进 CAST。
+5. **上下文裁剪先给系统提示留额度**，世界书和角色卡不会被长历史挤掉。
+6. **对话列表预览跟当前分支走**；调试按钮只在开发者模式显示。
+7. **故事开新对话不再和故事共用世界书列表**，删一条不会改掉另一条。
+8. **公网 HTTP / 非法协议直接拒绝**；局域网 Ollama 仍可用明文。
 
 ## 版本说明 (v2.0.0)
 
@@ -21,8 +32,8 @@ App **不提供推理、不做 API 中转、没有账号、没有云同步**。K
 
 Android APK 发布与下载：
 
-- **最新版本 Release**：[Project Tavern v2.0.0](https://github.com/Aliang-ye/ProjectTavern/releases/tag/v2.0.0)
-- **最新安装包直接下载**：[ProjectTavern-v2.0.0.apk](https://github.com/Aliang-ye/ProjectTavern/releases/download/v2.0.0/ProjectTavern-v2.0.0.apk)
+- **最新版本 Release**：[Project Tavern v2.1.0](https://github.com/Aliang-ye/ProjectTavern/releases/tag/v2.1.0)
+- **最新安装包直接下载**：[ProjectTavern-v2.1.0.apk](https://github.com/Aliang-ye/ProjectTavern/releases/download/v2.1.0/ProjectTavern-v2.1.0.apk)
 - **所有历史版本**：https://github.com/Aliang-ye/ProjectTavern/releases
 
 ## 能做什么

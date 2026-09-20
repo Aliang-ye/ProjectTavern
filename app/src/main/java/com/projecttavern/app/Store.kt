@@ -400,7 +400,7 @@ object Store {
                     id = nid(),
                     storyId = storyId,
                     characterId = "",
-                    worldBookIds = story?.worldBookIds ?: mutableListOf(),
+                    worldBookIds = ArrayList(story?.worldBookIds ?: emptyList()),
                     presetId = effectivePresetId,
                     personaId = personaId ?: story?.personaId ?: state.activePersonaId,
                     profileId = state.activeProfileId,

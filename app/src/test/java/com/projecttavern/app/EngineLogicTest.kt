@@ -122,6 +122,33 @@ class EngineLogicTest {
     }
 
     @Test
+    fun startStoryChatCopiesWorldBookIds() {
+        val story = Store.state.stories.first { it.id == "story-first" }
+        val original = ArrayList(story.worldBookIds)
+        val convId = Store.startConversation(null, "story-first")!!
+        val conv = Store.state.conversations.first { it.id == convId }
+        conv.worldBookIds.clear()
+        conv.worldBookIds.add("mutated")
+        assertEquals(original, story.worldBookIds)
+        assertEquals(listOf("mutated"), conv.worldBookIds)
+    }
+
+    @Test
+    fun regeneratePromptStopsAtRequestedTip() {
+        val convId = "regen"
+        val greet = ChatMessage(id = "g", conversationId = convId, parentId = null, role = "assistant", content = "你好", createdAt = 1)
+        val user = ChatMessage(id = "u", conversationId = convId, parentId = "g", role = "user", content = "点一杯", createdAt = 2)
+        val later = ChatMessage(id = "l", conversationId = convId, parentId = "u", role = "assistant", content = "后面的剧情不该进提示词", createdAt = 3)
+        Store.state.conversations.add(Conversation(id = convId, characterId = "char-alice", title = "t", tipMessageId = "l"))
+        Store.state.messages.addAll(listOf(greet, user, later))
+        val followed = Engine.build(convId)
+        assertTrue(followed.messages.any { it.second.contains("后面的剧情不该进提示词") })
+        val regen = Engine.build(convId, "g", followConversationTip = false)
+        assertFalse(regen.messages.any { it.second.contains("后面的剧情不该进提示词") })
+        assertTrue(regen.messages.any { it.first == "system" && it.second.contains("艾莉丝") })
+    }
+
+    @Test
     fun deleteCharacterAlsoDropsStoryChats() {
         val story = Story(id = "story-alice", name = "雨夜", worldBookIds = mutableListOf("world-dusk"))
         Store.state.stories.add(story)

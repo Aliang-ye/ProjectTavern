@@ -11,10 +11,10 @@ class ProfileActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        id = intent.getStringExtra("id") ?: return finish()
+        id = intent.getStringExtra("id") ?: run { finish(); return }
+        val p = Store.state.profiles.find { it.id == id } ?: run { finish(); return }
         b = ActivityProfileBinding.inflate(layoutInflater)
         setContentView(b.root)
-        val p = Store.state.profiles.find { it.id == id } ?: return finish()
         provider = if (p.provider == "claude") "claude" else "openai"
         b.btnBack.setOnClickListener { save(); finish() }
         b.btnSave.setOnClickListener { save(); finish() }
@@ -125,7 +125,10 @@ class ProfileActivity : AppCompatActivity() {
     private fun shouldReplaceProfileName(current: String): Boolean {
         val n = current.trim()
         if (n.isEmpty() || n.startsWith("Profile")) return true
-        val stock = setOf("OpenAI", "OpenAI 兼容", "Claude", "DeepSeek", "SiliconFlow", "智谱 GLM", "Ollama", "Gemini")
+        val stock = setOf(
+            "OpenAI", "OpenAI 兼容", "Claude", "DeepSeek", "SiliconFlow", "智谱 GLM",
+            "Ollama", "Gemini", "新配置", "New Profile",
+        )
         return stock.any { it.equals(n, ignoreCase = true) }
     }
 
@@ -155,6 +158,7 @@ class ProfileActivity : AppCompatActivity() {
     }
 
     private fun save() {
+        if (!::b.isInitialized || !::id.isInitialized) return
         val p = Store.state.profiles.find { it.id == id } ?: return
         p.name = b.etName.text.toString().trim().ifBlank { if (provider == "claude") "Claude" else "OpenAI" }
         p.provider = provider

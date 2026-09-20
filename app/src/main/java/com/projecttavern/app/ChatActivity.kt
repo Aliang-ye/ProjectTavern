@@ -151,27 +151,15 @@ class ChatActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        val text = b.etDraft.text?.toString() ?: ""
-        conv()?.let {
-            if (it.draftText != text) {
-                it.draftText = text
-                Store.persist()
-            }
-        }
+        saveDraftIfNeeded()
     }
 
     override fun onDestroy() {
-        val text = b.etDraft.text?.toString() ?: ""
-        conv()?.let {
-            if (it.draftText != text) {
-                it.draftText = text
-                Store.persist()
-            }
-        }
+        saveDraftIfNeeded()
         super.onDestroy()
         generateToken++
         Llm.cancel()
-        if (isChangingConfigurations) return
+        if (!::convId.isInitialized || isChangingConfigurations) return
         val c = conv()
         val removed = Store.state.messages.removeAll { m ->
             m.conversationId == convId &&
@@ -188,6 +176,17 @@ class ChatActivity : AppCompatActivity() {
             tipFixed = true
         }
         if (removed || tipFixed) Store.persist()
+    }
+
+    private fun saveDraftIfNeeded() {
+        if (!::b.isInitialized || !::convId.isInitialized) return
+        val text = b.etDraft.text?.toString() ?: ""
+        conv()?.let {
+            if (it.draftText != text) {
+                it.draftText = text
+                Store.persist()
+            }
+        }
     }
 
     private fun paintSend() {
@@ -280,7 +279,7 @@ class ChatActivity : AppCompatActivity() {
         b.err.visibility = View.GONE
         thread {
             try {
-                val built = Engine.build(convId, fallbackTipId ?: asst.parentId)
+                val built = Engine.build(convId, fallbackTipId ?: asst.parentId, followConversationTip = false)
                 val full = Llm.stream(profile, built.messages, preset, { piece ->
                     if (token != generateToken) return@stream
                     if (!Store.state.streaming) return@stream
@@ -292,10 +291,10 @@ class ChatActivity : AppCompatActivity() {
                         uiHandler.postDelayed({
                             throttlePending = false
                             if (isFinishing || isDestroyed) return@postDelayed
-                            val lastIdx = adapter.items.lastIndex
-                            if (lastIdx >= 0) {
-                                adapter.notifyItemChanged(lastIdx, Unit)
-                                if (userAtBottom) b.messages.scrollToPosition(lastIdx)
+                            val idx = adapter.items.indexOfFirst { it.id == asst.id }
+                            if (idx >= 0) {
+                                adapter.notifyItemChanged(idx, Unit)
+                                if (userAtBottom) b.messages.scrollToPosition(adapter.itemCount - 1)
                             }
                         }, 60)
                     }
@@ -313,6 +312,9 @@ class ChatActivity : AppCompatActivity() {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     busy = false
                     streamTarget = null
+                    lastFailedAsst = null
+                    b.btnRetry.visibility = View.GONE
+                    b.err.visibility = View.GONE
                     paintSend()
                     refresh(forceBottom = userAtBottom)
                     if (userAtBottom && adapter.itemCount > 0) {
@@ -387,6 +389,7 @@ class ChatActivity : AppCompatActivity() {
         busy = true
         streamTarget = asst
         val token = ++generateToken
+        throttlePending = false
         paintSend()
         b.err.visibility = View.GONE
         val promptBuilt = Engine.build(convId, asst.id)
@@ -433,6 +436,10 @@ class ChatActivity : AppCompatActivity() {
                     Store.persist()
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     busy = false
+                    streamTarget = null
+                    lastFailedAsst = null
+                    b.btnRetry.visibility = View.GONE
+                    b.err.visibility = View.GONE
                     paintSend()
                     refresh(forceBottom = userAtBottom)
                 }
