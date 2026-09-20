@@ -12,44 +12,41 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
-import com.google.gson.Gson
 import com.projecttavern.app.databinding.ActivityMainBinding
 import com.projecttavern.app.databinding.PanelListBinding
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
     private lateinit var b: ActivityMainBinding
-    private val gson = Gson()
     private val import =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
             if (uri == null) return@registerForActivityResult
             kotlin.concurrent.thread {
                 try {
                     val json = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: return@thread
-                    val next = gson.fromJson(json, TavernState::class.java)
-                    val looksLikeBackup = next != null && (next.characters.isNotEmpty() || next.worldBooks.isNotEmpty() || next.conversations.isNotEmpty() || next.profiles.isNotEmpty())
+                    if (Cards.importKind(json) != "backup") {
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) Toast.makeText(this, Store.t("backupInvalid"), Toast.LENGTH_SHORT).show()
+                        }
+                        return@thread
+                    }
+                    val next = Store.gson.fromJson(json, TavernState::class.java)
                     runOnUiThread {
                         if (isFinishing || isDestroyed) return@runOnUiThread
-                        if (looksLikeBackup) {
-                            val prompt = if (Store.state.locale == "en") {
-                                "Restoring this backup will replace current characters, worlds, and chat history. Continue?"
-                            } else {
-                                "恢复此备份将覆盖当前的所有角色、世界与聊天记录。是否继续？"
-                            }
-                            val positive = if (Store.state.locale == "en") "Restore" else "恢复"
-                            confirm(this, prompt, positive) {
-                                Store.replace(next)
-                                refresh()
-                                Toast.makeText(this, Store.t("backupRestored"), Toast.LENGTH_SHORT).show()
-                            }
-                        } else {
-                            Toast.makeText(this, Store.t("invalidCharacterJson"), Toast.LENGTH_SHORT).show()
+                        if (next == null) {
+                            Toast.makeText(this, Store.t("backupInvalid"), Toast.LENGTH_SHORT).show()
+                            return@runOnUiThread
+                        }
+                        confirm(this, Store.t("restoreBackupQ"), Store.t("restore")) {
+                            Store.replace(next)
+                            refresh()
+                            Toast.makeText(this, Store.t("backupRestored"), Toast.LENGTH_SHORT).show()
                         }
                     }
                 } catch (e: Exception) {
                     runOnUiThread {
                         if (isFinishing || isDestroyed) return@runOnUiThread
-                        Toast.makeText(this, if (Store.state.locale == "en") "Import failed: ${e.message ?: "invalid JSON"}" else "导入失败：${e.message ?: "JSON 格式不正确"}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, e.message ?: Store.t("backupInvalid"), Toast.LENGTH_LONG).show()
                     }
                 }
             }
@@ -491,11 +488,7 @@ class MainActivity : AppCompatActivity() {
                     },
                     onDelete = {
                         confirm(this@MainActivity, Store.t("deleteQ")) {
-                            Store.state.characters.removeAll { it.id == c.id }
-                            Store.state.characterWorldBooks.removeAll { it.characterId == c.id }
-                            Store.state.participants.removeAll { it.characterId == c.id }
-                            val removedIds = Store.state.conversations.filter { it.characterId == c.id && it.storyId == null }.map { it.id }.toSet()
-                            Store.deleteConversations(removedIds)
+                            Store.deleteCharacter(c.id)
                             Store.persist()
                             refresh()
                         }

@@ -48,8 +48,8 @@ object Store {
     fun now() = System.currentTimeMillis()
 
     fun listen(cb: () -> Unit): () -> Unit {
-        listeners.add(cb)
-        return { listeners.remove(cb) }
+        synchronized(stateLock) { listeners.add(cb) }
+        return { synchronized(stateLock) { listeners.remove(cb) } }
     }
 
     private fun redactedStateForWrite(): TavernState {
@@ -71,21 +71,27 @@ object Store {
         if (!::file.isInitialized) return
         val snapshot = locked {
             state.copy(
-                characters = ArrayList(state.characters),
-                characterWorldBooks = ArrayList(state.characterWorldBooks),
-                worldBooks = ArrayList(state.worldBooks),
-                entries = ArrayList(state.entries),
-                stories = ArrayList(state.stories),
-                participants = ArrayList(state.participants),
+                characters = ArrayList(state.characters.map {
+                    it.copy(tags = ArrayList(it.tags), alternateGreetings = ArrayList(it.alternateGreetings))
+                }),
+                characterWorldBooks = ArrayList(state.characterWorldBooks.map { it.copy() }),
+                worldBooks = ArrayList(state.worldBooks.map {
+                    it.copy(willAlternateGreetings = ArrayList(it.willAlternateGreetings))
+                }),
+                entries = ArrayList(state.entries.map {
+                    it.copy(keys = ArrayList(it.keys), secondaryKeys = ArrayList(it.secondaryKeys))
+                }),
+                stories = ArrayList(state.stories.map { it.copy(worldBookIds = ArrayList(it.worldBookIds)) }),
+                participants = ArrayList(state.participants.map { it.copy() }),
                 conversations = ArrayList(state.conversations.map { it.copy(worldBookIds = ArrayList(it.worldBookIds)) }),
                 messages = ArrayList(state.messages.map { m ->
                     m.copy(generations = ArrayList(m.generations.map { g -> g.copy() }))
                 }),
-                presets = ArrayList(state.presets),
-                profiles = ArrayList(state.profiles.map { it.copy() }),
-                personas = ArrayList(state.personas),
-                memories = ArrayList(state.memories)
-            ).also { it.profiles.forEach { p -> p.apiKey = "" } }
+                presets = ArrayList(state.presets.map { it.copy() }),
+                profiles = ArrayList(state.profiles.map { it.copy(apiKey = "") }),
+                personas = ArrayList(state.personas.map { it.copy(tags = ArrayList(it.tags)) }),
+                memories = ArrayList(state.memories.map { it.copy() }),
+            )
         }
         if (::appContext.isInitialized) {
             state.profiles.forEach { p ->
@@ -103,7 +109,8 @@ object Store {
                 }
             } catch (_: Exception) {}
         }
-        listeners.forEach { it() }
+        val cbs = synchronized(stateLock) { listeners.toList() }
+        cbs.forEach { it() }
     }
 
     fun hydrateKeys() {
@@ -142,6 +149,7 @@ object Store {
     fun reset() {
         if (::appContext.isInitialized) {
             appContext.getSharedPreferences("tavern_secrets", Context.MODE_PRIVATE).edit().clear().apply()
+            try { File(appContext.filesDir, "avatars").deleteRecursively() } catch (_: Exception) {}
         }
         state = seed()
         persist()
@@ -337,6 +345,14 @@ object Store {
 
     fun lastStoryChat(storyId: String): Conversation? {
         return state.conversations.filter { it.storyId == storyId }.maxByOrNull { it.updatedAt }
+    }
+
+    fun deleteCharacter(characterId: String) {
+        state.characters.removeAll { it.id == characterId }
+        state.characterWorldBooks.removeAll { it.characterId == characterId }
+        state.participants.removeAll { it.characterId == characterId }
+        val removedIds = state.conversations.filter { it.characterId == characterId }.map { it.id }.toSet()
+        deleteConversations(removedIds)
     }
 
     fun deleteWorld(worldBookId: String) {

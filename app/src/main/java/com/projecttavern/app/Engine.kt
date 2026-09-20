@@ -40,13 +40,16 @@ object Engine {
     }
 
     fun visible(convId: String, tipId: String?): List<ChatMessage> {
-        val msgs = Store.state.messages.filter { it.conversationId == convId }
         if (tipId == null) return emptyList()
+        val byId = HashMap<String, ChatMessage>()
+        for (m in Store.state.messages) {
+            if (m.conversationId == convId) byId[m.id] = m
+        }
         val path = mutableListOf<ChatMessage>()
         var cur: String? = tipId
         val guard = mutableSetOf<String>()
         while (cur != null && guard.add(cur)) {
-            val m = msgs.find { it.id == cur } ?: break
+            val m = byId[cur] ?: break
             path.add(m)
             cur = m.parentId
         }
@@ -76,7 +79,9 @@ object Engine {
     }
 
     fun fillMacros(text: String, userName: String, charName: String): String {
-        return text.replace("{{user}}", userName).replace("{{char}}", charName)
+        return text
+            .replace(Regex("\\{\\{\\s*user\\s*\\}\\}", RegexOption.IGNORE_CASE), userName)
+            .replace(Regex("\\{\\{\\s*char\\s*\\}\\}", RegexOption.IGNORE_CASE), charName)
     }
 
     fun formatRpText(raw: String): CharSequence {

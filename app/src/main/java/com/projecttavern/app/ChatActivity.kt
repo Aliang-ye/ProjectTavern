@@ -153,9 +153,14 @@ class ChatActivity : AppCompatActivity() {
             showConversationOptionsDialog()
             true
         }
-        val contextText = if (c.storyId == null) Store.t("privateChat") else Store.state.stories.find { it.id == c.storyId }?.name ?: Store.t("stories")
+        val contextText = when {
+            c.storyId != null -> Store.state.stories.find { it.id == c.storyId }?.name ?: Store.t("stories")
+            c.characterId.isBlank() && c.worldBookIds.isNotEmpty() -> Store.t("worldWill")
+            else -> Store.t("privateChat")
+        }
         val live = if (busy) Store.t("streamingStatus") else Store.t("readyStatus")
         b.headerSub.text = "$contextText · $live"
+        b.btnRetry.text = Store.t("retryAction")
         b.btnDebug.text = Store.t("debugger")
         b.etDraft.hint = Store.t("writeAction")
         paintSend()
@@ -192,7 +197,9 @@ class ChatActivity : AppCompatActivity() {
             }
         }
         super.onDestroy()
+        generateToken++
         Llm.cancel()
+        if (isChangingConfigurations) return
         val c = conv()
         val removed = Store.state.messages.removeAll { m ->
             m.conversationId == convId &&
@@ -212,10 +219,14 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun paintSend() {
-        b.btnSend.text = if (busy) "■" else if (Store.state.locale == "en") "Go" else "发送"
+        b.btnSend.text = if (busy) "■" else Store.t("send")
         b.btnSend.setBackgroundResource(if (busy) R.drawable.bg_stop else R.drawable.bg_send)
         val c = conv() ?: return
-        val contextText = if (c.storyId == null) Store.t("privateChat") else Store.state.stories.find { it.id == c.storyId }?.name ?: Store.t("stories")
+        val contextText = when {
+            c.storyId != null -> Store.state.stories.find { it.id == c.storyId }?.name ?: Store.t("stories")
+            c.characterId.isBlank() && c.worldBookIds.isNotEmpty() -> Store.t("worldWill")
+            else -> Store.t("privateChat")
+        }
         val live = if (busy) Store.t("streamingStatus") else Store.t("readyStatus")
         b.headerSub.text = "$contextText · $live"
     }

@@ -131,10 +131,16 @@ class StoryActivity : AppCompatActivity() {
             val cb = CheckBox(this)
             cb.text = w.name
             cb.setTextColor(getColor(R.color.ink))
+            cb.setOnCheckedChangeListener(null)
             cb.isChecked = w.id in st.worldBookIds
             cb.setOnCheckedChangeListener { _, on ->
                 if (on) { if (w.id !in st.worldBookIds) st.worldBookIds.add(w.id) }
                 else st.worldBookIds.remove(w.id)
+                if (!isNew) {
+                    Store.state.stories.find { it.id == id }?.worldBookIds = st.worldBookIds.toMutableList()
+                    Store.persist()
+                    baseline = snapshotOf(current())
+                }
             }
             b.worldList.addView(cb)
         }

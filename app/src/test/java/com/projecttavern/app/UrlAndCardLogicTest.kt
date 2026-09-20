@@ -56,4 +56,16 @@ class UrlAndCardLogicTest {
         assertEquals("chara_v2", Cards.importKind("""{"spec":"chara_card_v2","data":{"name":"A"}}"""))
         assertEquals("world", Cards.importKind("""{"spec":"project_tavern_world_v1","world":{},"entries":[]}"""))
     }
+
+    @Test
+    fun zhAndEnShareTheSameKeys() {
+        val zh = I18n.t("zh", "restoreBackupQ")
+        val en = I18n.t("en", "restoreBackupQ")
+        assertTrue(zh.isNotBlank())
+        assertTrue(en.isNotBlank())
+        assertTrue(zh != en)
+        assertEquals("↺ 重试", I18n.t("zh", "retryAction"))
+        assertEquals("↺ Retry", I18n.t("en", "retryAction"))
+        assertEquals("必须至少保留一个生成模式", I18n.t("zh", "keepOnePreset"))
+    }
 }

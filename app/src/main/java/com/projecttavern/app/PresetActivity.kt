@@ -118,10 +118,11 @@ class PresetActivity : AppCompatActivity() {
 
         btnDelete.setOnClickListener {
             if (totalCount <= 1) {
-                Toast.makeText(this, if (Store.state.locale == "en") "At least one preset must be retained." else "必须至少保留一个生成模式", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, Store.t("keepOnePreset"), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             confirm(this, Store.t("deleteQ")) {
+                saveActions.forEach { it() }
                 Store.state.presets.removeAll { it.id == p.id }
                 val fallback = Store.localePresets().firstOrNull()?.id ?: Store.state.presets.firstOrNull()?.id.orEmpty()
                 Store.state.conversations.forEach { if (it.presetId == p.id) it.presetId = fallback }

@@ -101,8 +101,16 @@ class CharacterActivity : AppCompatActivity() {
         b.btnDup.setOnClickListener {
             save(commitToStore = !isNew)
             val ch = current()
-            val copy = ch.copy(id = Store.nid(), name = "${ch.name} ${if (Store.state.locale == "en") "copy" else "副本"}", createdAt = Store.now(), updatedAt = Store.now())
+            val copy = ch.copy(
+                id = Store.nid(),
+                name = "${ch.name} ${if (Store.state.locale == "en") "copy" else "副本"}",
+                tags = ch.tags.toMutableList(),
+                alternateGreetings = ch.alternateGreetings.toMutableList(),
+                createdAt = Store.now(),
+                updatedAt = Store.now(),
+            )
             Store.state.characters.add(0, copy)
+            Store.defaultWorldId(ch.id)?.let { Store.setDefaultWorld(copy.id, it) }
             Store.persist()
             startActivity(Intent(this, CharacterActivity::class.java).putExtra("id", copy.id))
             finish()
@@ -113,11 +121,7 @@ class CharacterActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             confirm(this, Store.t("deleteQ")) {
-                Store.state.characters.removeAll { it.id == id }
-                Store.state.characterWorldBooks.removeAll { it.characterId == id }
-                Store.state.participants.removeAll { it.characterId == id }
-                val removedIds = Store.state.conversations.filter { it.characterId == id && it.storyId == null }.map { it.id }.toSet()
-                Store.deleteConversations(removedIds)
+                Store.deleteCharacter(id)
                 Store.persist()
                 finish()
             }
@@ -229,12 +233,20 @@ class CharacterActivity : AppCompatActivity() {
         c.creatorNotes = b.etNotes.text.toString()
     }
 
+    private fun selectedWorldId(): String? {
+        val sel = b.spWorld.selectedItemPosition
+        return if (sel <= 0) null else Store.state.worldBooks.getOrNull(sel - 1)?.id
+    }
+
     private fun snapshotOf(c: Character) = Store.gson.toJson(
-        c.copy(
-            tags = c.tags.toMutableList(),
-            alternateGreetings = c.alternateGreetings.toMutableList(),
-            createdAt = 0,
-            updatedAt = 0,
+        mapOf(
+            "character" to c.copy(
+                tags = c.tags.toMutableList(),
+                alternateGreetings = c.alternateGreetings.toMutableList(),
+                createdAt = 0,
+                updatedAt = 0,
+            ),
+            "world" to selectedWorldId(),
         )
     )
 

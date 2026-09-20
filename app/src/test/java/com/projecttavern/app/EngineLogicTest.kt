@@ -18,6 +18,7 @@ class EngineLogicTest {
     fun fillMacrosReplacesUserAndChar() {
         assertEquals("你好，艾莉丝", Engine.fillMacros("你好，{{char}}", "旅人", "艾莉丝"))
         assertEquals("旅人走进酒馆", Engine.fillMacros("{{user}}走进酒馆", "旅人", "艾莉丝"))
+        assertEquals("旅人 / 艾莉丝", Engine.fillMacros("{{USER}} / {{ Char }}", "旅人", "艾莉丝"))
     }
 
     @Test
@@ -95,6 +96,34 @@ class EngineLogicTest {
         assertTrue(Store.state.messages.none { it.conversationId == will })
         assertTrue(Store.state.worldBooks.none { it.id == "world-dusk" })
         assertTrue(Store.state.conversations.any { it.id == first || it.id == second })
+    }
+
+    @Test
+    fun deleteCharacterAlsoDropsStoryChats() {
+        val story = Story(id = "story-alice", name = "雨夜", worldBookIds = mutableListOf("world-dusk"))
+        Store.state.stories.add(story)
+        Store.state.participants.add(StoryParticipant(Store.nid(), "story-alice", "char-alice", "MAIN_CHARACTER"))
+        val storyChat = Store.startConversation(null, "story-alice")!!
+        val privateChat = Store.startConversation("char-alice", null)!!
+        Engine.upsertMemory(privateChat, "摘要")
+        Store.deleteCharacter("char-alice")
+        assertTrue(Store.state.characters.none { it.id == "char-alice" })
+        assertTrue(Store.state.conversations.none { it.id == storyChat || it.id == privateChat })
+        assertTrue(Store.state.memories.none { it.conversationId == privateChat })
+        assertTrue(Store.state.participants.none { it.characterId == "char-alice" })
+    }
+
+    @Test
+    fun persistSnapshotDoesNotShareMutableLists() {
+        val original = Store.state.characters.first { it.id == "char-alice" }
+        val tagsBefore = ArrayList(original.tags)
+        val snapshot = Store.state.copy(
+            characters = ArrayList(Store.state.characters.map {
+                it.copy(tags = ArrayList(it.tags), alternateGreetings = ArrayList(it.alternateGreetings))
+            })
+        )
+        original.tags.add("被污染")
+        assertEquals(tagsBefore, snapshot.characters.first { it.id == "char-alice" }.tags)
     }
 
     @Test
