@@ -16,7 +16,7 @@ class ProfileActivity : AppCompatActivity() {
         setContentView(b.root)
         val p = Store.state.profiles.find { it.id == id } ?: return finish()
         provider = if (p.provider == "claude") "claude" else "openai"
-        b.btnBack.setOnClickListener { finish() }
+        b.btnBack.setOnClickListener { save(); finish() }
         b.btnSave.setOnClickListener { save(); finish() }
         b.btnOpenai.setOnClickListener { setProvider("openai") }
         b.btnClaude.setOnClickListener { setProvider("claude") }
@@ -126,6 +126,12 @@ class ProfileActivity : AppCompatActivity() {
             }
         }
         bind(p)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        save()
+        super.onBackPressed()
     }
 
     private fun bind(p: ApiProfile) {

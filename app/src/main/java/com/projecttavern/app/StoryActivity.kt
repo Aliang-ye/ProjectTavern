@@ -53,8 +53,7 @@ class StoryActivity : AppCompatActivity() {
         b.btnAddNpc.setOnClickListener { pickCharacter("NPC") }
         b.btnStart.setOnClickListener {
             save(commitToStore = true)
-            val conv = Store.startConversation(null, id, current().personaId) ?: return@setOnClickListener
-            startActivity(Intent(this, ChatActivity::class.java).putExtra("id", conv))
+            offerStoryChat()
         }
         b.btnDelete.setOnClickListener {
             if (isNew) {
@@ -250,6 +249,22 @@ class StoryActivity : AppCompatActivity() {
     private fun isDirty(): Boolean {
         applyFormToDraft()
         return snapshotOf(current()) != baseline
+    }
+
+    private fun offerStoryChat() {
+        val last = Store.lastStoryChat(id)
+        if (last == null) {
+            val conv = Store.startConversation(null, id, current().personaId) ?: return
+            startActivity(Intent(this, ChatActivity::class.java).putExtra("id", conv))
+            return
+        }
+        AlertDialog.Builder(this)
+            .setItems(arrayOf(Store.t("continueLastChat"), Store.t("startNewChat"))) { _, which ->
+                val conv = if (which == 0) last.id else Store.startConversation(null, id, current().personaId)
+                if (conv != null) startActivity(Intent(this, ChatActivity::class.java).putExtra("id", conv))
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
     }
 
     private fun save(commitToStore: Boolean = false) {

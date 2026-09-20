@@ -71,10 +71,12 @@ class WorldActivity : AppCompatActivity() {
             finish()
         }
         b.btnTest.setOnClickListener {
-            save(commitToStore = !isNew)
-            if (!isNew) {
-                startActivity(Intent(this, EntryTestActivity::class.java).putExtra("id", id))
+            if (isNew) {
+                android.widget.Toast.makeText(this, Store.t("saveWorldFirst"), android.widget.Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
             }
+            save(commitToStore = true)
+            startActivity(Intent(this, EntryTestActivity::class.java).putExtra("id", id))
         }
         b.btnTest.setOnLongClickListener {
             save(commitToStore = !isNew)
@@ -88,11 +90,7 @@ class WorldActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             confirm(this, Store.t("deleteQ")) {
-                Store.state.worldBooks.removeAll { it.id == id }
-                Store.state.entries.removeAll { it.worldBookId == id }
-                Store.state.characterWorldBooks.removeAll { it.worldBookId == id }
-                Store.state.stories.forEach { it.worldBookIds.remove(id) }
-                Store.state.conversations.forEach { it.worldBookIds.remove(id) }
+                Store.deleteWorld(id)
                 Store.persist()
                 finish()
             }

@@ -231,6 +231,12 @@ object I18n {
         "providerGemini" to "Gemini",
         "memoryUpdated" to "记忆已更新",
         "branchIndex" to "分支",
+        "pickChatKind" to "开始哪种对话？",
+        "pickWorld" to "选择一个世界",
+        "pickStory" to "选择一个故事",
+        "goSettings" to "去设置",
+        "saveWorldFirst" to "先保存这个世界，才能测试条目。",
+        "emptyPersona" to "还没有自身角色卡。",
     )
 
     private val EN = mapOf(
@@ -458,5 +464,11 @@ object I18n {
         "providerGemini" to "Gemini",
         "memoryUpdated" to "Memory updated",
         "branchIndex" to "Branch",
+        "pickChatKind" to "What would you like to start?",
+        "pickWorld" to "Pick a world",
+        "pickStory" to "Pick a story",
+        "goSettings" to "Open settings",
+        "saveWorldFirst" to "Save this world before testing entries.",
+        "emptyPersona" to "No persona yet.",
     )
 }

@@ -335,6 +335,23 @@ object Store {
             .maxByOrNull { it.updatedAt }
     }
 
+    fun lastStoryChat(storyId: String): Conversation? {
+        return state.conversations.filter { it.storyId == storyId }.maxByOrNull { it.updatedAt }
+    }
+
+    fun deleteWorld(worldBookId: String) {
+        state.worldBooks.removeAll { it.id == worldBookId }
+        state.entries.removeAll { it.worldBookId == worldBookId }
+        state.characterWorldBooks.removeAll { it.worldBookId == worldBookId }
+        state.stories.forEach { it.worldBookIds.remove(worldBookId) }
+        val willIds = state.conversations
+            .filter { it.storyId == null && it.characterId.isBlank() && worldBookId in it.worldBookIds }
+            .map { it.id }
+            .toSet()
+        deleteConversations(willIds)
+        state.conversations.forEach { it.worldBookIds.remove(worldBookId) }
+    }
+
     fun deleteConversation(id: String) {
         deleteConversations(setOf(id))
     }

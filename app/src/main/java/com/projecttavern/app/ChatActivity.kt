@@ -1,5 +1,6 @@
 package com.projecttavern.app
 
+import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -147,7 +148,7 @@ class ChatActivity : AppCompatActivity() {
         // 优先展示用户自定义重命名的对话标题
         val headerName = c.title.ifBlank { defaultName }
         b.headerTitle.text = headerName
-        // 长按标题弹出操作菜单：重命名 / 导出对话记录
+        b.headerTitle.setOnClickListener { showConversationOptionsDialog() }
         b.headerTitle.setOnLongClickListener {
             showConversationOptionsDialog()
             true
@@ -238,7 +239,7 @@ class ChatActivity : AppCompatActivity() {
         val c = conv() ?: return
         val profile = Store.profileFor(c)
         if (profile == null || profile.apiKey.isBlank()) {
-            toast(Store.t("needProfile"))
+            askNeedProfile()
             return
         }
         if (c.profileId.isNullOrBlank()) c.profileId = profile.id
@@ -276,7 +277,7 @@ class ChatActivity : AppCompatActivity() {
         if (profile == null || profile.apiKey.isBlank()) {
             busy = false
             paintSend()
-            toast(Store.t("needProfile"))
+            askNeedProfile()
             return
         }
         val preset = Store.state.presets.find { it.id == conv()?.presetId }
@@ -371,7 +372,7 @@ class ChatActivity : AppCompatActivity() {
     private fun regenerate(m: ChatMessage) {
         val profile = Store.profileFor(conv())
         if (profile == null || profile.apiKey.isBlank()) {
-            toast(Store.t("needProfile"))
+            askNeedProfile()
             return
         }
         if (busy) Llm.cancel()
@@ -393,7 +394,7 @@ class ChatActivity : AppCompatActivity() {
     private fun continueGenerate(asst: ChatMessage) {
         val profile = Store.profileFor(conv())
         if (profile == null || profile.apiKey.isBlank()) {
-            toast(Store.t("needProfile"))
+            askNeedProfile()
             return
         }
         val preset = Store.state.presets.find { it.id == conv()?.presetId }
@@ -510,6 +511,19 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
+
+    private fun askNeedProfile() {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setMessage(Store.t("needProfile"))
+            .setPositiveButton(Store.t("goSettings")) { _, _ ->
+                startActivity(Intent(this, MainActivity::class.java).apply {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    putExtra("openSettings", true)
+                })
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
 
     private fun maybeSummarize() {
         if (!Engine.shouldSummarize(convId, conv()?.tipMessageId)) return

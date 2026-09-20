@@ -133,6 +133,19 @@ class MainActivity : AppCompatActivity() {
         wireSettings()
         show(R.id.nav_characters)
         maybeShowSetup()
+        applyOpenSettings(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        applyOpenSettings(intent)
+    }
+
+    private fun applyOpenSettings(intent: Intent?) {
+        if (intent?.getBooleanExtra("openSettings", false) == true) {
+            b.bottomNav.selectedItemId = R.id.nav_settings
+        }
     }
 
     private val importAny = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
@@ -230,16 +243,76 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun pickNewChat() {
+        val kinds = mutableListOf(
+            Store.t("characters") to { pickCharacterForChat() },
+            Store.t("worldWill") to { pickWorldForChat() },
+            Store.t("stories") to { pickStoryForChat() },
+        )
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("pickChatKind"))
+            .setItems(kinds.map { it.first }.toTypedArray()) { _, which ->
+                kinds[which].second()
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun pickCharacterForChat() {
         val chars = Store.state.characters
         if (chars.isEmpty()) {
             Toast.makeText(this, Store.t("emptyCharacters"), Toast.LENGTH_SHORT).show()
             return
         }
-        val names = chars.map { it.name }.toTypedArray()
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle(Store.t("pickCharacter"))
-            .setItems(names) { _, which ->
+            .setItems(chars.map { it.name }.toTypedArray()) { _, which ->
                 offerCharacterChat(chars[which].id)
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun pickWorldForChat() {
+        val worlds = Store.state.worldBooks
+        if (worlds.isEmpty()) {
+            Toast.makeText(this, Store.t("emptyWorlds"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("pickWorld"))
+            .setItems(worlds.map { it.name }.toTypedArray()) { _, which ->
+                offerWorldChat(worlds[which].id)
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun pickStoryForChat() {
+        val stories = Store.state.stories
+        if (stories.isEmpty()) {
+            Toast.makeText(this, Store.t("emptyStories"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("pickStory"))
+            .setItems(stories.map { it.name }.toTypedArray()) { _, which ->
+                offerStoryChat(stories[which].id)
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun offerStoryChat(storyId: String) {
+        val last = Store.lastStoryChat(storyId)
+        if (last == null) {
+            val id = Store.startConversation(null, storyId) ?: return
+            openScreen(ChatActivity::class.java) { it.putExtra("id", id) }
+            return
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setItems(arrayOf(Store.t("continueLastChat"), Store.t("startNewChat"))) { _, which ->
+                val id = if (which == 0) last.id else Store.startConversation(null, storyId)
+                if (id != null) openScreen(ChatActivity::class.java) { it.putExtra("id", id) }
             }
             .setNegativeButton(Store.t("cancel"), null)
             .show()
@@ -469,11 +542,7 @@ class MainActivity : AppCompatActivity() {
                     },
                     onDelete = {
                         confirm(this@MainActivity, Store.t("deleteQ")) {
-                            Store.state.worldBooks.removeAll { it.id == w.id }
-                            Store.state.entries.removeAll { it.worldBookId == w.id }
-                            Store.state.characterWorldBooks.removeAll { it.worldBookId == w.id }
-                            Store.state.stories.forEach { it.worldBookIds.remove(w.id) }
-                            Store.state.conversations.forEach { it.worldBookIds.remove(w.id) }
+                            Store.deleteWorld(w.id)
                             Store.persist()
                             refresh()
                         }
@@ -505,11 +574,11 @@ class MainActivity : AppCompatActivity() {
             displayed.forEach { st ->
                 val n = Store.state.participants.count { it.storyId == st.id }
                 val chats = Store.state.conversations.count { it.storyId == st.id }
-                inflateSwipeRow(
+                val row = inflateSwipeRow(
                     it,
                     title = st.name,
-                    subtitle = st.description.ifBlank { Store.t("stories") },
-                    meta = "$n ${Store.t("people")} · $chats",
+                    subtitle = st.description.ifBlank { "$n ${Store.t("people")} · $chats ${Store.t("conversations")}" },
+                    meta = Store.t("startChat"),
                     isPinned = st.isPinned,
                     onClick = { openScreen(StoryActivity::class.java) { intent -> intent.putExtra("id", st.id) } },
                     onPin = {
@@ -527,6 +596,9 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                 )
+                row.findViewById<TextView>(R.id.meta).setOnClickListener { _ ->
+                    offerStoryChat(st.id)
+                }
             }
             addMaxDisplayNotice(it, displayed.size, stories.size)
         }

@@ -81,6 +81,23 @@ class EngineLogicTest {
     }
 
     @Test
+    fun lastStoryChatAndDeleteWorldDropsWillChats() {
+        val story = Story(id = "story-1", name = "雾夜", worldBookIds = mutableListOf("world-dusk"))
+        Store.state.stories.add(story)
+        val first = Store.startConversation(null, "story-1")!!
+        Store.state.conversations.find { it.id == first }!!.updatedAt -= 10
+        val second = Store.startConversation(null, "story-1")!!
+        assertEquals(second, Store.lastStoryChat("story-1")?.id)
+
+        val will = Store.startWorldWillConversation("world-dusk")!!
+        Store.deleteWorld("world-dusk")
+        assertTrue(Store.state.conversations.none { it.id == will })
+        assertTrue(Store.state.messages.none { it.conversationId == will })
+        assertTrue(Store.state.worldBooks.none { it.id == "world-dusk" })
+        assertTrue(Store.state.conversations.any { it.id == first || it.id == second })
+    }
+
+    @Test
     fun shouldSummarizeNeedsEnoughNewTurns() {
         val convId = "sum"
         Store.state.conversations.add(Conversation(id = convId, characterId = "char-alice", title = "t"))
