@@ -627,9 +627,8 @@ class MainActivity : AppCompatActivity() {
                 } else null
                 val story = Store.state.stories.find { s -> s.id == c.storyId }
                 // 最后一条消息预览（最多60字，剥离斜体星号）
-                val lastMsg = Store.state.messages
-                    .filter { it.conversationId == c.id }
-                    .maxByOrNull { it.createdAt }
+                val lastMsg = Engine.visible(c.id, c.tipMessageId).lastOrNull()
+                    ?: Store.state.messages.filter { it.conversationId == c.id }.maxByOrNull { it.createdAt }
                 val lastPreview = if (lastMsg != null) {
                     val text = if (lastMsg.role == "assistant") Engine.display(lastMsg) else lastMsg.content
                     val cleanText = text.replace("*", "").trim()

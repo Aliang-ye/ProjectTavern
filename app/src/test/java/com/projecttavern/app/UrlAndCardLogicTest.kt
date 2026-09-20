@@ -44,9 +44,28 @@ class UrlAndCardLogicTest {
         assertTrue(Llm.isPrivateHost("10.0.0.2"))
         assertTrue(Llm.isPrivateHost("192.168.1.8"))
         assertTrue(Llm.isPrivateHost("172.16.0.4"))
+        assertTrue(Llm.isPrivateHost("::1"))
         assertFalse(Llm.isPrivateHost("api.openai.com"))
         assertFalse(Llm.isPrivateHost("8.8.8.8"))
         assertFalse(Llm.isPrivateHost("1.1.1.1"))
+    }
+
+    @Test
+    fun assertSafeUrlRejectsPublicHttpAndBadSchemes() {
+        Llm.assertSafeUrl("https://api.openai.com/v1/chat/completions")
+        Llm.assertSafeUrl("http://192.168.1.8:11434/v1/chat/completions")
+        try {
+            Llm.assertSafeUrl("http://api.openai.com/v1/chat/completions")
+            throw AssertionError("public HTTP should fail")
+        } catch (e: RuntimeException) {
+            assertTrue(e.message!!.contains("HTTPS") || e.message!!.contains("http"))
+        }
+        try {
+            Llm.assertSafeUrl("ftp://example.com")
+            throw AssertionError("ftp should fail")
+        } catch (e: RuntimeException) {
+            assertTrue(e.message!!.contains("http"))
+        }
     }
 
     @Test

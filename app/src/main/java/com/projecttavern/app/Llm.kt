@@ -99,18 +99,28 @@ object Llm {
         }
     }
 
-    private fun assertSafeUrl(url: String) {
-        val uri = try { java.net.URI(url) } catch (_: Exception) { return }
-        if (uri.scheme != "http") return
-        val host = uri.host ?: return
-        if (!isPrivateHost(host)) {
+    internal fun assertSafeUrl(url: String) {
+        if (url.isBlank()) {
+            throw RuntimeException(if (Store.state.locale == "en") "Endpoint URL is empty." else "接口地址为空。")
+        }
+        val uri = try {
+            java.net.URI(url)
+        } catch (_: Exception) {
+            throw RuntimeException(if (Store.state.locale == "en") "Invalid endpoint URL." else "接口地址无效。")
+        }
+        val scheme = uri.scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") {
+            throw RuntimeException(if (Store.state.locale == "en") "Endpoint must be http or https." else "接口地址必须是 http 或 https。")
+        }
+        val host = uri.host ?: throw RuntimeException(if (Store.state.locale == "en") "Invalid endpoint URL." else "接口地址无效。")
+        if (scheme == "http" && !isPrivateHost(host)) {
             throw RuntimeException(if (Store.state.locale == "en") "HTTP is only allowed for LAN / localhost. Use HTTPS for public APIs." else "公网接口必须使用 HTTPS。明文 HTTP 仅允许局域网 / localhost。")
         }
     }
 
     internal fun isPrivateHost(host: String): Boolean {
-        val h = host.lowercase().trim('.')
-        if (h == "localhost" || h.endsWith(".local")) return true
+        val h = host.lowercase().trim().trim('.')
+        if (h == "localhost" || h.endsWith(".local") || h == "::1" || h == "[::1]") return true
         val parts = h.split('.')
         if (parts.size == 4 && parts.all { it.toIntOrNull() != null }) {
             val a = parts[0].toInt(); val b = parts[1].toInt()

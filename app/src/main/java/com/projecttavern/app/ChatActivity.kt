@@ -40,6 +40,7 @@ class ChatActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         convId = intent.getStringExtra("id") ?: return finish()
+        if (Store.state.conversations.none { it.id == convId }) return finish()
         b = ActivityChatBinding.inflate(layoutInflater)
         setContentView(b.root)
         adapter = MsgAdapter()
@@ -128,6 +129,11 @@ class ChatActivity : AppCompatActivity() {
         b.headerSub.text = "$contextText · $live"
         b.btnRetry.text = Store.t("retryAction")
         b.btnDebug.text = Store.t("debugger")
+        b.btnDebug.visibility = if (Store.state.developerMode) View.VISIBLE else View.GONE
+        if (!Store.state.developerMode) {
+            debugOn = false
+            b.debugBox.visibility = View.GONE
+        }
         b.etDraft.hint = Store.t("writeAction")
         paintSend()
         val presets = Store.localePresets()
@@ -362,7 +368,6 @@ class ChatActivity : AppCompatActivity() {
         m.generations.add(gen)
         m.generationIndex = m.generations.lastIndex
         m.content = ""
-        conv()?.tipMessageId = m.id
         Store.persist()
         refresh()
         generate(m, m.parentId)

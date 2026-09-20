@@ -112,16 +112,16 @@ object Engine {
         return cjk + (other + 3) / 4
     }
 
-    private fun trimHistoryForContext(history: List<ChatMessage>, preset: Preset?): List<ChatMessage> {
+    internal fun trimHistoryForContext(history: List<ChatMessage>, preset: Preset?, reservedTokens: Int = 0): List<ChatMessage> {
         if (preset == null || preset.contextLimit <= 0) return history
-        val maxTokens = preset.contextLimit.coerceAtLeast(1024)
+        val budget = (preset.contextLimit - reservedTokens.coerceAtLeast(0)).coerceAtLeast(512)
         if (history.size <= 4) return history
         var total = 0
         val kept = ArrayDeque<ChatMessage>()
         for (m in history.asReversed()) {
             val text = if (m.role == "assistant") display(m) else m.content
             val tokens = estimateTokens(text) + 8
-            if (total + tokens > maxTokens && kept.size >= 4) break
+            if (total + tokens > budget && kept.size >= 4) break
             kept.addFirst(m)
             total += tokens
         }
@@ -182,12 +182,11 @@ object Engine {
         val preset = s.presets.find { it.id == conv.presetId } ?: Store.localePresets().firstOrNull()
         val effectiveTip = tipMessageId ?: conv.tipMessageId
         val history = visible(conversationId, effectiveTip)
-        val contextHistory = trimHistoryForContext(history, preset)
-        val histText = contextHistory.joinToString("\n") { if (it.role == "assistant") display(it) else it.content }
         val worldIds = if (conv.worldBookIds.isNotEmpty()) conv.worldBookIds else {
             s.characterWorldBooks.filter { it.characterId == conv.characterId }.map { it.worldBookId }
         }
         val worlds = s.worldBooks.filter { it.id in worldIds }
+        val histText = history.joinToString("\n") { if (it.role == "assistant") display(it) else it.content }
         val entries = matchEntries(histText, s.entries.filter { it.worldBookId in worldIds }, roll = true)
         val before = entries.filter { it.insertionPosition == "before_char" }
         val after = entries.filter { it.insertionPosition != "before_char" }
@@ -243,7 +242,7 @@ object Engine {
                 sys.append("## STORY\nTitle: ").append(story.name)
                 if (story.description.isNotBlank()) sys.append("\nPlot: ").append(fill(story.description))
                 sys.append("\n\n")
-                val parts = s.participants.filter { it.storyId == story.id && it.characterId != ch?.id }
+                val parts = s.participants.filter { it.storyId == story.id && it.enabled && it.characterId != ch?.id }
                 if (parts.isNotEmpty()) {
                     sys.append("## CAST\n")
                     for (p in parts) {
@@ -270,7 +269,9 @@ object Engine {
             after.forEach { e -> sys.append("[").append(e.name).append("] ").append(fill(e.content)).append("\n\n") }
         }
 
-        val messages = mutableListOf("system" to sys.toString().trim())
+        val sysText = sys.toString().trim()
+        val contextHistory = trimHistoryForContext(history, preset, estimateTokens(sysText) + 64)
+        val messages = mutableListOf("system" to sysText)
         for (m in contextHistory) {
             val text = if (m.role == "assistant") display(m).trim() else m.content.trim()
             if (text.isBlank()) continue

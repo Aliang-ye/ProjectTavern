@@ -34,6 +34,26 @@ class EngineLogicTest {
     }
 
     @Test
+    fun trimHistoryReservesSystemTokens() {
+        val history = (0 until 12).map { i ->
+            ChatMessage(
+                id = "h$i",
+                conversationId = "c",
+                parentId = if (i == 0) null else "h${i - 1}",
+                role = if (i % 2 == 0) "user" else "assistant",
+                content = "这段话用来占上下文预算 ".repeat(8) + i,
+                createdAt = i.toLong(),
+            )
+        }
+        val preset = Preset(id = "p", name = "t", contextLimit = 200)
+        val full = Engine.trimHistoryForContext(history, preset, reservedTokens = 0)
+        val reserved = Engine.trimHistoryForContext(history, preset, reservedTokens = 120)
+        assertTrue(reserved.size <= full.size)
+        assertTrue(reserved.size >= 4)
+        assertEquals(history.last().id, reserved.last().id)
+    }
+
+    @Test
     fun visibleWalksParentChainAndLeafPicksLatestChild() {
         val conv = "c1"
         val root = ChatMessage(id = "r", conversationId = conv, parentId = null, role = "assistant", content = "hi", createdAt = 1)
