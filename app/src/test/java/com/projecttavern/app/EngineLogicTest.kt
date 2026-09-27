@@ -34,6 +34,35 @@ class EngineLogicTest {
     }
 
     @Test
+    fun continuationAppendsWithoutDuplicatingOverlap() {
+        val merged = Engine.appendContinuation("夜色沉下来。", "夜色沉下来。她推开了门。")
+        assertEquals("夜色沉下来。她推开了门。", merged)
+        assertEquals("第一段\n第二段", Engine.appendContinuation("第一段", "第二段"))
+    }
+
+    @Test
+    fun pendingUserTextActivatesLoreBeforeItIsStored() {
+        val entry = WorldBookEntry(id = "gate", worldBookId = "w", name = "城门", keys = mutableListOf("城门"), content = "城门 Lore")
+        val hits = Engine.matchEntries("我走向城门", listOf(entry), roll = false)
+        assertEquals(listOf("城门"), hits.map { it.name })
+    }
+
+    @Test
+    fun probabilityStaysStableForTheSameContext() {
+        val entry = WorldBookEntry(
+            id = "rare",
+            worldBookId = "w",
+            name = "稀有设定",
+            keys = mutableListOf("酒馆"),
+            content = "lore",
+            probability = 40,
+        )
+        val first = Engine.matchEntries("走进酒馆", listOf(entry), roll = true).map { it.id }
+        val second = Engine.matchEntries("走进酒馆", listOf(entry), roll = true).map { it.id }
+        assertEquals(first, second)
+    }
+
+    @Test
     fun trimHistoryReservesSystemTokens() {
         val history = (0 until 12).map { i ->
             ChatMessage(
@@ -71,6 +100,16 @@ class EngineLogicTest {
     }
 
     @Test
+    fun descendantsCollectOnlyTheChosenMessageBranch() {
+        val root = ChatMessage(id = "root", conversationId = "c", role = "assistant")
+        val keep = ChatMessage(id = "keep", conversationId = "c", parentId = "root", role = "user")
+        val remove = ChatMessage(id = "remove", conversationId = "c", parentId = "root", role = "user")
+        val child = ChatMessage(id = "child", conversationId = "c", parentId = "remove", role = "assistant")
+        Store.state.messages.addAll(listOf(root, keep, remove, child))
+        assertEquals(setOf("remove", "child"), Engine.descendantsOf(remove))
+    }
+
+    @Test
     fun displayPrefersSelectedGeneration() {
         val m = ChatMessage(
             id = "m",
@@ -81,6 +120,16 @@ class EngineLogicTest {
             generationIndex = 1,
         )
         assertEquals("two", Engine.display(m))
+    }
+
+    @Test
+    fun excludedMessageDoesNotContributeToPromptHistory() {
+        val c = Store.startConversation("char-alice", null)!!
+        val first = Store.state.messages.first { it.conversationId == c }
+        first.included = false
+        val debug = Engine.build(c).debug
+        assertTrue(debug.contains("visible=1"))
+        assertTrue(debug.contains("history=0/0"))
     }
 
     @Test

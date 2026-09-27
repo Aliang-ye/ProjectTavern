@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#120e0c</color>
-    <color name="surface">#1c1512</color>
-    <color name="raised">#271c17</color>
-    <color name="ink">#f3e6d0</color>
-    <color name="muted">#9a8472</color>
-    <color name="line">#3a2c24</color>
-    <color name="candle">#e4a04a</color>
-    <color name="wine">#8c3d3a</color>
-    <color name="on_candle">#120e0c</color>
+    <color name="bg">#171513</color>
+    <color name="surface">#211e1b</color>
+    <color name="raised">#2a2623</color>
+    <color name="ink">#ece7df</color>
+    <color name="muted">#aaa297</color>
+    <color name="line">#3a3531</color>
+    <color name="candle">#d2b48c</color>
+    <color name="wine">#c48b84</color>
+    <color name="on_candle">#171513</color>
+    <color name="panel">#24211e</color>
+    <color name="accent_soft">#24302a</color>
 </resources>

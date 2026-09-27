@@ -6,7 +6,17 @@
 
 App **不提供推理、不做 API 中转、没有账号、没有云同步**。Key 存在本机 Android Keystore，明文不会进 `tavern.json`。
 
-当前构建：**v2.1.0**（重写不再藏后续对话、草稿与重试更稳、世界书优先级可编辑、上下文给系统提示留额度）
+当前构建：**v2.2.0**（简约护眼界面、即时世界书触发、停止词、消息上下文控制与更安全的分支删除）
+
+## 版本说明 (v2.2.0)
+
+1. **简约护眼视觉**：日间与夜间统一低饱和主题，减少渐变、阴影和高对比色；卡片、输入框、标签均跟随主题。
+2. **更顺的浏览**：模块切换采用轻量淡入，当前统计入口会高亮；对话页保留回到底部、搜索、引用、分支与多版本回复。
+3. **世界书即时生效**：当前输入的关键词会在同一回合参与词条匹配；概率命中稳定，词条按上下文预算和优先级裁剪。
+4. **可选停止词**：生成模式支持每行一个停止词，OpenAI 兼容接口使用 `stop`，Claude 使用 `stop_sequences`；默认不改变现有输出。
+5. **消息上下文控制**：长按消息可设为“不参与后续生成”，保留在记录中但不会进入模型上下文或触发世界书。
+6. **更安全的分支删除**：新增“从此处删除”，只删除当前消息和其后续分支，不会将失去前文的回复强行接回父节点。
+7. **数据兼容**：旧备份会自动保留所有消息的“参与上下文”行为；API Key 仍只保存在本机 Keystore。
 
 ## 版本说明 (v2.1.0)
 
@@ -32,8 +42,8 @@ App **不提供推理、不做 API 中转、没有账号、没有云同步**。K
 
 Android APK 发布与下载：
 
-- **最新版本 Release**：[Project Tavern v2.1.0](https://github.com/Aliang-ye/ProjectTavern/releases/tag/v2.1.0)
-- **最新安装包直接下载**：[ProjectTavern-v2.1.0.apk](https://github.com/Aliang-ye/ProjectTavern/releases/download/v2.1.0/ProjectTavern-v2.1.0.apk)
+- **最新版本 Release**：[Project Tavern v2.2.0](https://github.com/Aliang-ye/ProjectTavern/releases/tag/v2.2.0)
+- **最新安装包直接下载**：[ProjectTavern-v2.2.0.apk](https://github.com/Aliang-ye/ProjectTavern/releases/download/v2.2.0/ProjectTavern-v2.2.0.apk)
 - **所有历史版本**：https://github.com/Aliang-ye/ProjectTavern/releases
 
 ## 能做什么

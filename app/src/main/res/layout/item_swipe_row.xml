@@ -19,8 +19,7 @@
             android:id="@+id/contentCard"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:background="@drawable/bg_card"
-            android:elevation="1dp"
+            android:background="@drawable/bg_message_card"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:padding="12dp">

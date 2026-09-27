@@ -75,11 +75,13 @@ class PresetActivity : AppCompatActivity() {
         val etMax = v.findViewById<EditText>(R.id.etMax)
         val etContext = v.findViewById<EditText>(R.id.etContext)
         val etBudget = v.findViewById<EditText>(R.id.etBudget)
+        val etStop = v.findViewById<EditText>(R.id.etStop)
         val etPrompt = v.findViewById<EditText>(R.id.etPrompt)
         val btnDelete = v.findViewById<TextView>(R.id.btnDelete)
 
         v.findViewById<TextView>(R.id.lContext).text = Store.t("contextLimit")
         v.findViewById<TextView>(R.id.lBudget).text = Store.t("responseBudget")
+        etStop.hint = Store.t("stopSequencesHint")
         btnDelete.text = Store.t("delete")
 
         etName.setText(p.name)
@@ -88,6 +90,7 @@ class PresetActivity : AppCompatActivity() {
         etMax.setText(p.maxTokens.toString())
         etContext.setText(p.contextLimit.toString())
         etBudget.setText(p.responseBudget.toString())
+        etStop.setText(p.stopSequences.joinToString("\n"))
         etPrompt.setText(p.systemPrompt)
 
         fun save() {
@@ -99,6 +102,7 @@ class PresetActivity : AppCompatActivity() {
             p.maxTokens = (etMax.text.toString().toIntOrNull() ?: p.maxTokens).coerceIn(1, 16384)
             p.contextLimit = (etContext.text.toString().toIntOrNull() ?: p.contextLimit).coerceAtLeast(512)
             p.responseBudget = (etBudget.text.toString().toIntOrNull() ?: p.responseBudget).coerceIn(1, 16384)
+            p.stopSequences = etStop.text.toString().lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(8).toMutableList()
             p.systemPrompt = etPrompt.text.toString()
             Store.persist()
         }
@@ -112,6 +116,7 @@ class PresetActivity : AppCompatActivity() {
         etMax.onFocusChangeListener = focusListener
         etContext.onFocusChangeListener = focusListener
         etBudget.onFocusChangeListener = focusListener
+        etStop.onFocusChangeListener = focusListener
         etPrompt.onFocusChangeListener = focusListener
 
         saveActions.add(::save)

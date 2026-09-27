@@ -324,12 +324,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun show(id: Int) {
+        val changed = currentNavId != id
         currentNavId = id
-        b.panelCharacters.root.visibility = goneIf(id != R.id.nav_characters)
-        b.panelWorlds.root.visibility = goneIf(id != R.id.nav_worlds)
-        b.panelStories.root.visibility = goneIf(id != R.id.nav_stories)
-        b.panelChats.root.visibility = goneIf(id != R.id.nav_chats)
-        b.panelSettings.root.visibility = goneIf(id != R.id.nav_settings)
+        val panels = listOf(
+            R.id.nav_characters to b.panelCharacters.root,
+            R.id.nav_worlds to b.panelWorlds.root,
+            R.id.nav_stories to b.panelStories.root,
+            R.id.nav_chats to b.panelChats.root,
+            R.id.nav_settings to b.panelSettings.root,
+        )
+        panels.forEach { (navId, view) ->
+            val showPanel = navId == id
+            if (showPanel && view.visibility != View.VISIBLE) {
+                view.visibility = View.VISIBLE
+                if (changed) view.startAnimation(android.view.animation.AnimationUtils.loadAnimation(this, R.anim.fade_in))
+            } else if (!showPanel) {
+                view.visibility = View.GONE
+            }
+        }
+        paintActiveStats(id)
         // 按需刷新：只刷新当前激活的面板，减少不必要的全量重绘
         when (id) {
             R.id.nav_characters -> refreshCharacters()
@@ -337,6 +350,20 @@ class MainActivity : AppCompatActivity() {
             R.id.nav_stories -> refreshStories()
             R.id.nav_chats -> refreshChats()
             R.id.nav_settings -> refreshSettings()
+        }
+    }
+
+    private fun paintActiveStats(id: Int) {
+        val stats = listOf(
+            R.id.nav_characters to b.statCharacters,
+            R.id.nav_worlds to b.statWorlds,
+            R.id.nav_stories to b.statStories,
+            R.id.nav_chats to b.statChats,
+        )
+        stats.forEach { (navId, view) ->
+            val on = navId == id
+            view.setBackgroundResource(if (on) R.drawable.bg_chip_on else R.drawable.bg_chip)
+            view.setTextColor(getColor(if (on) R.color.on_candle else R.color.ink))
         }
     }
 
@@ -365,6 +392,7 @@ class MainActivity : AppCompatActivity() {
         b.statWorlds.text = "${Store.state.worldBooks.size} $worldLabel"
         b.statStories.text = "${Store.state.stories.size} $storyLabel"
         b.statChats.text = "${Store.state.conversations.size} $chatLabel"
+        paintActiveStats(currentNavId)
         val active = Store.activeProfile()
         val ready = active != null && active.apiKey.isNotBlank()
         b.statusBanner.text = if (loc == "en") {
@@ -388,6 +416,21 @@ class MainActivity : AppCompatActivity() {
         p.panelHint.visibility = if (hint.isBlank()) View.GONE else View.VISIBLE
         p.search.visibility = View.VISIBLE
         p.fab.visibility = if (fab) View.VISIBLE else View.GONE
+        val sortLabel = when (Store.state.librarySort) {
+            "name" -> Store.t("sortName")
+            "pinned" -> Store.t("sortPinned")
+            else -> Store.t("sortRecent")
+        }
+        p.panelSort.text = sortLabel
+        p.panelSort.setOnClickListener {
+            Store.state.librarySort = when (Store.state.librarySort) {
+                "recent" -> "name"
+                "name" -> "pinned"
+                else -> "recent"
+            }
+            Store.persist()
+            refresh()
+        }
         when {
             p === b.panelCharacters -> {
                 p.panelAction.visibility = View.VISIBLE
@@ -461,7 +504,7 @@ class MainActivity : AppCompatActivity() {
         val q = b.panelCharacters.search.text?.toString()?.trim()?.lowercase().orEmpty()
         val list = Store.state.characters.filter {
             q.isEmpty() || it.name.lowercase().contains(q) || it.tags.any { t -> t.lowercase().contains(q) }
-        }.sortedWith(compareByDescending<Character> { it.isPinned }.thenByDescending { it.updatedAt })
+        }.let { sortLibrary(it, { c -> c.isPinned }, { c -> c.updatedAt }, { c -> c.name }) }
         val displayed = if (list.size > MAX_DISPLAY) list.take(MAX_DISPLAY) else list
         fill(b.panelCharacters.list) {
             if (displayed.isEmpty()) {
@@ -506,7 +549,7 @@ class MainActivity : AppCompatActivity() {
         val q = b.panelWorlds.search.text?.toString()?.trim()?.lowercase() ?: ""
         val worlds = Store.state.worldBooks
             .filter { q.isEmpty() || it.name.lowercase().contains(q) || it.description.lowercase().contains(q) || it.willName.lowercase().contains(q) }
-            .sortedWith(compareByDescending<WorldBook> { it.isPinned }.thenByDescending { it.updatedAt })
+            .let { sortLibrary(it, { w -> w.isPinned }, { w -> w.updatedAt }, { w -> w.name }) }
         val displayed = if (worlds.size > MAX_DISPLAY) worlds.take(MAX_DISPLAY) else worlds
         fill(b.panelWorlds.list) {
             if (displayed.isEmpty()) {
@@ -553,7 +596,7 @@ class MainActivity : AppCompatActivity() {
         val q = b.panelStories.search.text?.toString()?.trim()?.lowercase() ?: ""
         val stories = Store.state.stories
             .filter { q.isEmpty() || it.name.lowercase().contains(q) || it.description.lowercase().contains(q) }
-            .sortedWith(compareByDescending<Story> { it.isPinned }.thenByDescending { it.updatedAt })
+            .let { sortLibrary(it, { s -> s.isPinned }, { s -> s.updatedAt }, { s -> s.name }) }
         val displayed = if (stories.size > MAX_DISPLAY) stories.take(MAX_DISPLAY) else stories
         fill(b.panelStories.list) {
             if (displayed.isEmpty()) {
@@ -608,7 +651,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 titleHit || bodyHit
             }
-        }.sortedWith(compareByDescending<Conversation> { it.isPinned }.thenByDescending { it.updatedAt })
+        }.let { sortLibrary(it, { c -> c.isPinned }, { c -> c.updatedAt }, { c -> c.title }) }
         val displayed = if (allConvs.size > MAX_DISPLAY) allConvs.take(MAX_DISPLAY) else allConvs
         fill(b.panelChats.list) {
             if (displayed.isEmpty()) {
@@ -893,6 +936,14 @@ class MainActivity : AppCompatActivity() {
         val uri = FileProvider.getUriForFile(this, "$packageName.files", f)
         val intent = Intent(Intent.ACTION_SEND).setType("application/json").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         startActivity(Intent.createChooser(intent, Store.t("exportBackup")))
+    }
+
+    private fun <T> sortLibrary(items: List<T>, pinned: (T) -> Boolean, updated: (T) -> Long, name: (T) -> String): List<T> {
+        return when (Store.state.librarySort) {
+            "name" -> items.sortedWith(compareByDescending(pinned).thenBy { name(it).lowercase() })
+            "pinned" -> items.sortedWith(compareByDescending(pinned).thenByDescending(updated))
+            else -> items.sortedByDescending(updated)
+        }
     }
 
     private fun fill(list: LinearLayout, block: (LinearLayout) -> Unit) {

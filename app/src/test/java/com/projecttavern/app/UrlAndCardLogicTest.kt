@@ -77,6 +77,12 @@ class UrlAndCardLogicTest {
     }
 
     @Test
+    fun presetKeepsOptionalStopSequences() {
+        val preset = Preset(stopSequences = mutableListOf("User:", "###"))
+        assertEquals(listOf("User:", "###"), preset.stopSequences)
+    }
+
+    @Test
     fun zhAndEnShareTheSameKeys() {
         val zh = I18n.t("zh", "restoreBackupQ")
         val en = I18n.t("en", "restoreBackupQ")

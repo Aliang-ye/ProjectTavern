@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#f3ead9</color>
-    <color name="surface">#fbf6ea</color>
-    <color name="raised">#efe4d0</color>
-    <color name="ink">#2a1d16</color>
-    <color name="muted">#7a6554</color>
-    <color name="line">#d8c6ad</color>
-    <color name="candle">#b56a1a</color>
-    <color name="wine">#8c3d3a</color>
-    <color name="on_candle">#f3ead9</color>
-    <color name="panel">#f7f0e4</color>
-    <color name="accent_soft">#f3d8b5</color>
+    <color name="bg">#f4f1ea</color>
+    <color name="surface">#fbfaf7</color>
+    <color name="raised">#eeece6</color>
+    <color name="ink">#2d2926</color>
+    <color name="muted">#746d66</color>
+    <color name="line">#ddd8cf</color>
+    <color name="candle">#8d6244</color>
+    <color name="wine">#8f5d58</color>
+    <color name="on_candle">#fbfaf7</color>
+    <color name="panel">#f7f5f1</color>
+    <color name="accent_soft">#e7efe8</color>
 </resources>

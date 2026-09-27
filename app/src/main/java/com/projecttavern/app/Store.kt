@@ -31,6 +31,11 @@ object Store {
                 seed()
             }
         } else seed()
+        // Kotlin Boolean defaults to false when Gson reads an old object without this field.
+        // Old chats always included every message, so preserve that behavior during migration.
+        if (raw.isNotBlank() && !raw.contains("\"included\"")) {
+            state.messages.forEach { it.included = true }
+        }
         if (!raw.contains("\"userName\"")) {
             state.userName = if (state.locale == "en") "You" else "你"
             if (state.userPersona.isNullOrBlank()) state.userPersona = "一个走进暮色酒馆的旅人。话不多，观察入微。"
@@ -59,6 +64,11 @@ object Store {
     }
 
     private val ioExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    @Volatile var lastPersistError: String? = null
+
+    fun io(block: () -> Unit) {
+        ioExecutor.execute(block)
+    }
     private val stateLock = Any()
 
     fun <T> locked(block: () -> T): T = synchronized(stateLock, block)
@@ -87,7 +97,7 @@ object Store {
                 messages = ArrayList(state.messages.map { m ->
                     m.copy(generations = ArrayList(m.generations.map { g -> g.copy() }))
                 }),
-                presets = ArrayList(state.presets.map { it.copy() }),
+                presets = ArrayList(state.presets.map { it.copy(stopSequences = ArrayList(it.stopSequences)) }),
                 profiles = ArrayList(state.profiles.map { it.copy(apiKey = "") }),
                 personas = ArrayList(state.personas.map { it.copy(tags = ArrayList(it.tags)) }),
                 memories = ArrayList(state.memories.map { it.copy() }),
@@ -107,7 +117,10 @@ object Store {
                     tmp.copyTo(file, overwrite = true)
                     tmp.delete()
                 }
-            } catch (_: Exception) {}
+                lastPersistError = null
+            } catch (e: Exception) {
+                lastPersistError = e.message ?: e.javaClass.simpleName
+            }
         }
         val cbs = synchronized(stateLock) { listeners.toList() }
         cbs.forEach { it() }
@@ -522,9 +535,11 @@ object Store {
         state.conversations.forEach {
             if (it.worldBookIds == null) it.worldBookIds = mutableListOf()
             if (it.draftText == null) it.draftText = ""
+            if (it.authorNote == null) it.authorNote = ""
         }
         state.messages.forEach {
             if (it.generations == null) it.generations = mutableListOf()
+            if (!it.included) it.included = false
         }
 
         ensureBuiltinPresets()
@@ -552,6 +567,8 @@ object Store {
         if (state.userName.isNullOrBlank()) state.userName = if (state.locale == "en") "You" else "你"
         if (state.userPersona.isBlank()) state.userPersona = ""
         if (state.appearance.isNullOrBlank()) state.appearance = "dark"
+        if (state.chatFontScale <= 0f) state.chatFontScale = 1f
+        if (state.librarySort.isBlank()) state.librarySort = "recent"
         if (first) state.streaming = true
         if (state.personas.isEmpty()) {
             val defaultPersona = Persona(
@@ -571,7 +588,10 @@ object Store {
         state.profiles.forEach { p ->
             if (p.provider != "claude") p.provider = "openai"
         }
-        state.presets.forEach { if (it.locale.isBlank()) it.locale = "zh" }
+        state.presets.forEach {
+            if (it.locale.isBlank()) it.locale = "zh"
+            if (it.stopSequences == null) it.stopSequences = mutableListOf()
+        }
         if (state.locale != "en") state.locale = "zh"
         if (state.appearance !in listOf("dark", "light", "system")) state.appearance = "dark"
         if (state.profiles.any { it.apiKey.isNotBlank() }) state.setupDone = true

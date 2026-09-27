@@ -166,12 +166,12 @@ object Llm {
             .put("top_p", preset.topP)
             .put("max_tokens", effectiveMaxTokens)
             .put("messages", arr)
-            .toString()
+        if (preset.stopSequences.isNotEmpty()) body.put("stop", JSONArray(preset.stopSequences))
         val req = Request.Builder()
             .url(url)
             .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Content-Type", "application/json")
-            .post(body.toRequestBody("application/json".toMediaType()))
+            .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
         return if (streaming) {
             readSse(req, onDelta, cancellable) { json ->
@@ -225,6 +225,7 @@ object Llm {
             .put("max_tokens", effectiveMaxTokens)
             .put("messages", arr)
         if (system.isNotBlank()) body.put("system", system)
+        if (preset.stopSequences.isNotEmpty()) body.put("stop_sequences", JSONArray(preset.stopSequences))
         val req = Request.Builder()
             .url(claudeUrl(p))
             .addHeader("x-api-key", apiKey)

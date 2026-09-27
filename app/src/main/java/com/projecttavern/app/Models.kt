@@ -19,6 +19,7 @@ data class Preset(
     var contextLimit: Int = 32000,
     var responseBudget: Int = 900,
     var systemPrompt: String = "",
+    var stopSequences: MutableList<String> = mutableListOf(),
 )
 
 data class Character(
@@ -127,6 +128,7 @@ data class ChatMessage(
     var generations: MutableList<Generation> = mutableListOf(),
     var generationIndex: Int = 0,
     var createdAt: Long = 0,
+    var included: Boolean = true,
 )
 
 data class Conversation(
@@ -141,6 +143,7 @@ data class Conversation(
     var title: String = "",
     var tipMessageId: String? = null,
     var draftText: String = "",
+    var authorNote: String = "",
     var isPinned: Boolean = false,
     var createdAt: Long = 0,
     var updatedAt: Long = 0,
@@ -177,4 +180,6 @@ data class TavernState(
     var autoSummary: Boolean = true,
     var developerMode: Boolean = false,
     var setupDone: Boolean = false,
+    var chatFontScale: Float = 1f,
+    var librarySort: String = "recent",
 )

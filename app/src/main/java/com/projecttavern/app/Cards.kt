@@ -248,7 +248,13 @@ object Cards {
         for (k in keys) {
             if (!o.has(k) || o.get(k).isJsonNull) continue
             val v = o.get(k)
-            if (v.isJsonArray) return v.asJsonArray.mapNotNull { it.asString?.trim() }.filter { it.isNotEmpty() }.toMutableList()
+            if (v.isJsonArray) return v.asJsonArray.mapNotNull { el ->
+                when {
+                    el.isJsonPrimitive -> el.asString
+                    el.isJsonObject -> str(el.asJsonObject, "key", "name", "value")
+                    else -> ""
+                }.trim().ifBlank { null }
+            }.toMutableList()
             if (v.isJsonPrimitive) return v.asString.split(Regex("[,，]")).map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
         }
         return mutableListOf()

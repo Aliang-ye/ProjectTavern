@@ -150,6 +150,18 @@
     </LinearLayout>
 
     <EditText
+        android:id="@+id/etStop"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_input"
+        android:hint=""
+        android:padding="12dp"
+        android:textColor="@color/ink"
+        android:textColorHint="@color/muted"
+        android:textSize="13sp" />
+
+    <EditText
         android:id="@+id/etPrompt"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

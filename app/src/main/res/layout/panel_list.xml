@@ -15,7 +15,8 @@
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingHorizontal="16dp"
-            android:paddingTop="14dp">
+            android:paddingTop="16dp"
+            android:paddingBottom="2dp">
 
             <TextView
                 android:id="@+id/panelTitle"
@@ -25,6 +26,17 @@
                 android:fontFamily="serif"
                 android:textColor="@color/ink"
                 android:textSize="22sp" />
+
+            <TextView
+                android:id="@+id/panelSort"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_chip"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp"
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
 
             <TextView
                 android:id="@+id/panelAction"

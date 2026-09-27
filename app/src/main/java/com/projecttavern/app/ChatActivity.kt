@@ -64,7 +64,11 @@ class ChatActivity : AppCompatActivity() {
                 b.messages.smoothScrollToPosition(adapter.itemCount - 1)
             }
         }
-        b.messages.setOnTouchListener { _, _ -> hideKeyboard(); false }
+        b.messages.setOnTouchListener { _, event ->
+            hideKeyboard()
+            gesture.onTouchEvent(event)
+            false
+        }
         b.btnBack.setOnClickListener { finish() }
         b.btnSend.setOnClickListener { if (busy) stop() else send() }
         b.btnDebug.setOnClickListener {
@@ -85,6 +89,7 @@ class ChatActivity : AppCompatActivity() {
             true
         }
         b.btnRetry.setOnClickListener { retryLastFailed() }
+        b.btnTools.setOnClickListener { showConversationOptionsDialog() }
         if (Store.state.developerMode) {
             debugOn = true
             b.debugBox.visibility = View.VISIBLE
@@ -98,6 +103,24 @@ class ChatActivity : AppCompatActivity() {
             }
         }
         bindHeader()
+        refresh()
+    }
+
+    private val gesture = android.view.GestureDetector(this, object : android.view.GestureDetector.SimpleOnGestureListener() {
+        override fun onFling(e1: android.view.MotionEvent?, e2: android.view.MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+            if (busy || e1 == null || kotlin.math.abs(velocityX) < 900 || kotlin.math.abs(velocityX) < kotlin.math.abs(velocityY) * 1.4f) return false
+            val target = path().lastOrNull { it.role == "assistant" && it.generations.size > 1 } ?: return false
+            swipeGeneration(target, if (velocityX < 0) 1 else -1)
+            return true
+        }
+    })
+
+    private fun swipeGeneration(m: ChatMessage, delta: Int) {
+        if (m.generations.size < 2) return
+        m.generationIndex = (m.generationIndex + delta).mod(m.generations.size)
+        m.content = Engine.display(m)
+        conv()?.updatedAt = Store.now()
+        Store.persist()
         refresh()
     }
 
@@ -126,7 +149,7 @@ class ChatActivity : AppCompatActivity() {
             else -> Store.t("privateChat")
         }
         val live = if (busy) Store.t("streamingStatus") else Store.t("readyStatus")
-        b.headerSub.text = "$contextText · $live"
+        b.headerSub.text = "$contextText · $live · ${Store.t("contextShort")} ${convContextCount(c)}"
         b.btnRetry.text = Store.t("retryAction")
         b.btnDebug.text = Store.t("debugger")
         b.btnDebug.visibility = if (Store.state.developerMode) View.VISIBLE else View.GONE
@@ -199,7 +222,15 @@ class ChatActivity : AppCompatActivity() {
             else -> Store.t("privateChat")
         }
         val live = if (busy) Store.t("streamingStatus") else Store.t("readyStatus")
-        b.headerSub.text = "$contextText · $live"
+        b.headerSub.text = "$contextText · $live · ${Store.t("contextShort")} ${convContextCount(c)}"
+    }
+
+    private fun convContextCount(c: Conversation): String {
+        val worldCount = if (c.worldBookIds.isNotEmpty()) c.worldBookIds.size else {
+            Store.state.characterWorldBooks.count { it.characterId == c.characterId }
+        }
+        val note = if (c.authorNote.isNotBlank()) 1 else 0
+        return "$worldCount+$note"
     }
 
     private fun path(): List<ChatMessage> {
@@ -212,6 +243,7 @@ class ChatActivity : AppCompatActivity() {
         adapter.notifyDataSetChanged()
         if (adapter.items.isNotEmpty() && (forceBottom || userAtBottom)) {
             b.messages.scrollToPosition(adapter.items.size - 1)
+            b.btnScrollBottom.visibility = View.GONE
         }
     }
 
@@ -253,6 +285,7 @@ class ChatActivity : AppCompatActivity() {
         c.tipMessageId = asst.id
         c.updatedAt = Store.now()
         Store.persist()
+        warnIfSaveFailed()
         refresh(forceBottom = true)
         generate(asst, user.id)
     }
@@ -280,9 +313,10 @@ class ChatActivity : AppCompatActivity() {
         throttlePending = false
         paintSend()
         b.err.visibility = View.GONE
-        thread {
+        Store.io {
             try {
-                val built = Engine.build(convId, fallbackTipId ?: asst.parentId, followConversationTip = false)
+                val pending = Store.state.messages.find { it.id == asst.parentId }?.content.orEmpty()
+                val built = Engine.build(convId, fallbackTipId ?: asst.parentId, followConversationTip = false, pendingUserText = pending)
                 val full = Llm.stream(profile, built.messages, preset, { piece ->
                     if (token != generateToken) return@stream
                     if (!Store.state.streaming) return@stream
@@ -404,14 +438,18 @@ class ChatActivity : AppCompatActivity() {
         }
         val messages = promptBuilt.messages.toMutableList()
         messages.add("user" to continuePrompt)
-        thread {
+        Store.io {
             try {
+                val base = asst.content
+                val addition = StringBuilder()
                 val full = Llm.stream(profile, messages, preset, { piece ->
                     if (!Store.state.streaming) return@stream
                     if (token != generateToken) return@stream
                     val g = asst.generations.getOrNull(asst.generationIndex) ?: return@stream
-                    g.content += piece
-                    asst.content = g.content
+                    addition.append(piece)
+                    val merged = Engine.appendContinuation(base, addition.toString())
+                    g.content = merged
+                    asst.content = merged
                     if (!throttlePending) {
                         throttlePending = true
                         uiHandler.postDelayed({
@@ -429,13 +467,9 @@ class ChatActivity : AppCompatActivity() {
                     if (token != generateToken) return@runOnUiThread
                     val g = asst.generations.getOrNull(asst.generationIndex)
                     if (full.isNotBlank()) {
-                        if (g != null) {
-                            if (!Store.state.streaming) g.content += full
-                            else g.content = asst.content
-                            asst.content = g.content
-                        } else if (!Store.state.streaming) {
-                            asst.content += full
-                        }
+                        val merged = Engine.appendContinuation(base, full)
+                        if (g != null) g.content = merged
+                        asst.content = merged
                     }
                     conv()?.updatedAt = Store.now()
                     Store.persist()
@@ -507,6 +541,10 @@ class ChatActivity : AppCompatActivity() {
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
 
+    private fun warnIfSaveFailed() {
+        if (Store.lastPersistError != null) toast(Store.t("saveFailed"))
+    }
+
     private fun retryLastFailed() {
         val failed = lastFailedAsst ?: return
         val profile = Store.profileFor(conv())
@@ -567,7 +605,7 @@ class ChatActivity : AppCompatActivity() {
         val profile = Store.profileFor(conv()) ?: return
         val preset = Store.state.presets.find { it.id == conv()?.presetId } ?: Store.localePresets().firstOrNull() ?: return
         val prompt = Engine.summaryPrompt(convId, conv()?.tipMessageId)
-        thread {
+        Store.io {
             try {
                 val text = Llm.stream(
                     profile,
@@ -615,7 +653,19 @@ class ChatActivity : AppCompatActivity() {
             cm.setPrimaryClip(android.content.ClipData.newPlainText("t", text))
             toast(Store.t("copied"))
         }
+        add(Store.t("quote")) {
+            val text = if (m.role == "assistant") Engine.display(m) else m.content
+            val quote = text.lineSequence().joinToString("\n") { "> $it" }
+            val draft = b.etDraft.text?.toString().orEmpty()
+            b.etDraft.setText(listOf(draft.trimEnd(), quote).filter { it.isNotBlank() }.joinToString("\n\n"))
+            b.etDraft.setSelection(b.etDraft.text?.length ?: 0)
+        }
         add(Store.t("edit")) { showEditMessageDialog(m) }
+        add(if (m.included) Store.t("excludeFromContext") else Store.t("includeInContext")) {
+            m.included = !m.included
+            Store.persist()
+            refresh()
+        }
         add(Store.t("fork")) { forkFrom(m) }
         if (m.role == "assistant") {
             add(Store.t("continueChat")) { continueGenerate(m) }
@@ -639,6 +689,17 @@ class ChatActivity : AppCompatActivity() {
                 refresh(forceBottom = true)
             }
         }
+        add(Store.t("deleteFromHere")) {
+            confirm(this, Store.t("deleteFromHereQ")) {
+                val ids = Engine.descendantsOf(m)
+                Store.state.messages.removeAll { it.id in ids }
+                val c = conv()
+                if (c?.tipMessageId in ids) c?.tipMessageId = m.parentId
+                c?.updatedAt = Store.now()
+                Store.persist()
+                refresh(forceBottom = true)
+            }
+        }
         add(Store.t("delete")) {
             confirm(this, Store.t("deleteQ")) {
                 Store.state.messages.filter { it.parentId == m.id }.forEach { it.parentId = m.parentId }
@@ -655,12 +716,21 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun showConversationOptionsDialog() {
-        val opts = arrayOf(Store.t("renameConversation"), Store.t("exportChat"))
+        val opts = arrayOf(
+            Store.t("renameConversation"),
+            Store.t("promptTools"),
+            Store.t("switchCharacter"),
+            Store.t("bindWorlds"),
+            Store.t("chatAppearance"),
+        )
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setItems(opts) { _, which ->
                 when (which) {
                     0 -> showRenameConversationDialog()
-                    1 -> exportChatAsMarkdown()
+                    1 -> showPromptToolsDialog()
+                    2 -> showCharacterSwitchDialog()
+                    3 -> showWorldBindingDialog()
+                    4 -> showAppearanceDialog()
                 }
             }
             .show()
@@ -704,6 +774,154 @@ class ChatActivity : AppCompatActivity() {
                 startActivity(android.content.Intent.createChooser(share, Store.t("exportChat")))
             }
         }.start()
+    }
+
+    private fun showPromptToolsDialog() {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("promptTools"))
+            .setItems(arrayOf(Store.t("editMemory"), Store.t("authorNote"), Store.t("searchInChat"))) { _, which ->
+                when (which) {
+                    0 -> showMemoryDialog()
+                    1 -> showAuthorNoteDialog()
+                    else -> showSearchDialog()
+                }
+            }
+            .show()
+    }
+
+    private fun showAppearanceDialog() {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("chatAppearance"))
+            .setItems(arrayOf(Store.t("textSize"), Store.t("exportChat"))) { _, which ->
+                if (which == 0) showFontSizeDialog() else exportChatAsMarkdown()
+            }
+            .show()
+    }
+
+    private fun showMemoryDialog() {
+        val et = android.widget.EditText(this)
+        et.setText(Engine.memoryFor(convId)?.content.orEmpty())
+        et.hint = Store.t("noMemoryYet")
+        et.minLines = 6
+        et.gravity = android.view.Gravity.TOP
+        et.setTextColor(getColor(R.color.ink))
+        et.setHintTextColor(getColor(R.color.muted))
+        et.background = getDrawable(R.drawable.bg_input)
+        et.setPadding(dp(12), dp(12), dp(12), dp(12))
+        val box = android.widget.FrameLayout(this).apply { setPadding(dp(16), dp(12), dp(16), dp(4)); addView(et) }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("editMemory"))
+            .setView(android.widget.ScrollView(this).apply { addView(box) })
+            .setPositiveButton(Store.t("save")) { _, _ ->
+                val text = et.text.toString().trim()
+                if (text.isBlank()) {
+                    Store.state.memories.removeAll { it.conversationId == convId && it.type == "CHAT_SUMMARY" }
+                    Store.persist()
+                } else Engine.upsertMemory(convId, text)
+                toast(Store.t("memorySaved"))
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun showAuthorNoteDialog() {
+        val et = android.widget.EditText(this)
+        et.setText(conv()?.authorNote.orEmpty())
+        et.hint = Store.t("authorNoteHint")
+        et.minLines = 5
+        et.gravity = android.view.Gravity.TOP
+        et.setTextColor(getColor(R.color.ink))
+        et.setHintTextColor(getColor(R.color.muted))
+        et.background = getDrawable(R.drawable.bg_input)
+        et.setPadding(dp(12), dp(12), dp(12), dp(12))
+        val box = android.widget.FrameLayout(this).apply { setPadding(dp(16), dp(12), dp(16), dp(4)); addView(et) }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("authorNote"))
+            .setView(android.widget.ScrollView(this).apply { addView(box) })
+            .setPositiveButton(Store.t("save")) { _, _ ->
+                conv()?.authorNote = et.text.toString().trim()
+                conv()?.updatedAt = Store.now()
+                Store.persist()
+                toast(Store.t("memorySaved"))
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun showCharacterSwitchDialog() {
+        val chars = Store.state.characters
+        if (chars.isEmpty()) return toast(Store.t("emptyCharacters"))
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("switchCharacter"))
+            .setItems(chars.map { it.name }.toTypedArray()) { _, which ->
+                val ch = chars[which]
+                conv()?.let {
+                    it.characterId = ch.id
+                    if (it.title.isBlank()) it.title = ch.name
+                    it.updatedAt = Store.now()
+                }
+                Store.persist()
+                bindHeader(); refresh()
+                toast(Store.t("characterSwitched"))
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun showWorldBindingDialog() {
+        val worlds = Store.state.worldBooks
+        if (worlds.isEmpty()) return toast(Store.t("emptyWorlds"))
+        val selected = conv()?.worldBookIds?.toMutableSet() ?: mutableSetOf()
+        val checks = worlds.map { it.id in selected }.toBooleanArray()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("bindWorlds"))
+            .setMultiChoiceItems(worlds.map { it.name }.toTypedArray(), checks) { _, which, on ->
+                if (on) selected.add(worlds[which].id) else selected.remove(worlds[which].id)
+            }
+            .setPositiveButton(Store.t("save")) { _, _ ->
+                conv()?.worldBookIds = selected.toMutableList()
+                conv()?.updatedAt = Store.now()
+                Store.persist()
+                bindHeader()
+                toast(Store.t("worldsBound"))
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun showSearchDialog() {
+        val et = android.widget.EditText(this)
+        et.hint = Store.t("searchInChat")
+        et.setTextColor(getColor(R.color.ink))
+        et.setHintTextColor(getColor(R.color.muted))
+        et.background = getDrawable(R.drawable.bg_input)
+        et.setPadding(dp(12), dp(12), dp(12), dp(12))
+        val box = android.widget.FrameLayout(this).apply { setPadding(dp(16), dp(8), dp(16), dp(4)); addView(et) }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("searchInChat"))
+            .setView(box)
+            .setPositiveButton(Store.t("search")) { _, _ ->
+                val q = et.text.toString().trim()
+                if (q.isBlank()) return@setPositiveButton
+                val hit = path().indexOfLast { (if (it.role == "assistant") Engine.display(it) else it.content).contains(q, true) }
+                if (hit < 0) toast(Store.t("noSearchHit")) else b.messages.smoothScrollToPosition(hit)
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
+    }
+
+    private fun showFontSizeDialog() {
+        val scales = floatArrayOf(0.9f, 1f, 1.2f)
+        val labels = arrayOf(Store.t("textSmall"), Store.t("textNormal"), Store.t("textLarge"))
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Store.t("textSize"))
+            .setItems(labels) { _, which ->
+                Store.state.chatFontScale = scales[which]
+                Store.persist()
+                refresh()
+            }
+            .setNegativeButton(Store.t("cancel"), null)
+            .show()
     }
 
     private fun showRenameConversationDialog() {
@@ -773,15 +991,14 @@ class ChatActivity : AppCompatActivity() {
                 user.visibility = View.GONE
                 val rawText = Engine.display(m).ifBlank { if (busy && position == items.lastIndex) "…" else "" }
                 body.setText(Engine.formatRpText(rawText), TextView.BufferType.SPANNABLE)
+                body.textSize = 15f * Store.state.chatFontScale.coerceIn(0.8f, 1.5f)
                 val muted = getColor(R.color.muted)
+                if (!m.included) actions.addView(actionLabel(this@ChatActivity, Store.t("excludedShort"), muted) { showMessageMenu(m) })
                 val sibs = Engine.siblings(m)
                 if (m.generations.size > 1) {
-                    actions.addView(actionLabel(this@ChatActivity, "${m.generationIndex + 1}/${m.generations.size}", muted) {
-                        m.generationIndex = (m.generationIndex + 1) % m.generations.size
-                        m.content = Engine.display(m)
-                        Store.persist()
-                        refresh()
-                    })
+                    actions.addView(actionLabel(this@ChatActivity, "‹", muted) { swipeGeneration(m, -1) })
+                    actions.addView(actionLabel(this@ChatActivity, "${m.generationIndex + 1}/${m.generations.size}", muted) {})
+                    actions.addView(actionLabel(this@ChatActivity, "›", muted) { swipeGeneration(m, 1) })
                 }
                 if (sibs.size > 1) {
                     val idx = sibs.indexOfFirst { it.id == m.id }.coerceAtLeast(0)
@@ -799,7 +1016,9 @@ class ChatActivity : AppCompatActivity() {
                 body.visibility = View.GONE
                 user.visibility = View.VISIBLE
                 user.setText(Engine.formatRpText(m.content), TextView.BufferType.SPANNABLE)
+                user.textSize = 15f * Store.state.chatFontScale.coerceIn(0.8f, 1.5f)
                 val muted = getColor(R.color.muted)
+                if (!m.included) actions.addView(actionLabel(this@ChatActivity, Store.t("excludedShort"), muted) { showMessageMenu(m) })
                 val sibs = Engine.siblings(m)
                 if (sibs.size > 1) {
                     val idx = sibs.indexOfFirst { it.id == m.id }.coerceAtLeast(0)

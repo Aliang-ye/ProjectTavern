@@ -10,21 +10,35 @@ object Engine {
         val src = text.lowercase()
         return entries.filter { e ->
             if (!e.enabled) return@filter false
-            if (e.constant) return@filter passProbability(e, roll)
+            if (e.constant) return@filter passProbability(e, roll, src)
             val primary = e.keys.any { k -> k.isNotBlank() && src.contains(k.lowercase()) }
             if (!primary) return@filter false
             val secondaryOk = e.secondaryKeys.none { it.isNotBlank() } ||
                 e.secondaryKeys.any { k -> k.isNotBlank() && src.contains(k.lowercase()) }
-            secondaryOk && passProbability(e, roll)
+            secondaryOk && passProbability(e, roll, src)
         }.sortedByDescending { it.priority }
     }
 
-    private fun passProbability(e: WorldBookEntry, roll: Boolean): Boolean {
+    private fun limitLoreForContext(entries: List<WorldBookEntry>, preset: Preset?): List<WorldBookEntry> {
+        val limit = ((preset?.contextLimit ?: 12000) / 3).coerceIn(1200, 4000)
+        var used = 0
+        return entries.filter { e ->
+            val cost = estimateTokens(e.name) + estimateTokens(e.content) + 12
+            if (used + cost > limit && used > 0) false else {
+                used += cost
+                true
+            }
+        }
+    }
+
+    private fun passProbability(e: WorldBookEntry, roll: Boolean, seed: String): Boolean {
         if (!roll) return true
         val p = e.probability.coerceIn(0, 100)
         if (p >= 100) return true
         if (p <= 0) return false
-        return (1..100).random() <= p
+        // 同一段上下文必须稳定命中；否则重试、调试与正式请求会得到不同世界观。
+        val bucket = ((seed + '\u0000' + e.id).hashCode() and Int.MAX_VALUE) % 100 + 1
+        return bucket <= p
     }
 
     fun lore(w: WorldBook): String {
@@ -76,6 +90,20 @@ object Engine {
             cur = latestChild[cur.id] ?: break
         }
         return cur
+    }
+
+    fun appendContinuation(existing: String, addition: String): String {
+        val base = existing.trimEnd()
+        val extra = addition.trim()
+        if (extra.isBlank()) return base
+        if (base.isBlank()) return extra
+        if (extra.startsWith(base)) return extra
+        val overlap = (minOf(base.length, extra.length) downTo 24).firstOrNull { n ->
+            base.takeLast(n) == extra.take(n)
+        } ?: 0
+        val merged = if (overlap > 0) extra.drop(overlap) else extra
+        val joiner = if (base.endsWith("\n") || merged.startsWith("\n")) "" else "\n"
+        return base + joiner + merged.trimStart()
     }
 
     fun display(m: ChatMessage): String {
@@ -175,19 +203,43 @@ object Engine {
         return listOf("system" to instruction, "user" to body)
     }
 
-    fun build(conversationId: String, tipMessageId: String? = null, followConversationTip: Boolean = true): PromptBuilt {
+    fun descendantsOf(root: ChatMessage): Set<String> {
+        val ids = mutableSetOf(root.id)
+        var changed = true
+        while (changed) {
+            changed = false
+            Store.state.messages.filter { it.conversationId == root.conversationId && it.parentId in ids }.forEach {
+                if (ids.add(it.id)) changed = true
+            }
+        }
+        return ids
+    }
+
+    fun build(
+        conversationId: String,
+        tipMessageId: String? = null,
+        followConversationTip: Boolean = true,
+        pendingUserText: String = "",
+    ): PromptBuilt {
         val s = Store.state
         val conv = s.conversations.find { it.id == conversationId } ?: return PromptBuilt(emptyList(), "")
         val ch = s.characters.find { it.id == conv.characterId }
         val preset = s.presets.find { it.id == conv.presetId } ?: Store.localePresets().firstOrNull()
         val effectiveTip = tipMessageId ?: if (followConversationTip) conv.tipMessageId else null
         val history = visible(conversationId, effectiveTip)
+        val includedHistory = history.filter { it.included }
         val worldIds = if (conv.worldBookIds.isNotEmpty()) conv.worldBookIds else {
             s.characterWorldBooks.filter { it.characterId == conv.characterId }.map { it.worldBookId }
         }
         val worlds = s.worldBooks.filter { it.id in worldIds }
-        val histText = history.joinToString("\n") { if (it.role == "assistant") display(it) else it.content }
-        val entries = matchEntries(histText, s.entries.filter { it.worldBookId in worldIds }, roll = true)
+        val histText = buildString {
+            includedHistory.forEach { append(if (it.role == "assistant") display(it) else it.content).append('\n') }
+            if (pendingUserText.isNotBlank()) append(pendingUserText)
+        }
+        val entries = limitLoreForContext(
+            matchEntries(histText, s.entries.filter { it.worldBookId in worldIds }, roll = true),
+            preset,
+        )
         val before = entries.filter { it.insertionPosition == "before_char" }
         val after = entries.filter { it.insertionPosition != "before_char" }
         val lock = if (s.locale == "en") Store.t("lockEn") else Store.t("lockZh")
@@ -212,6 +264,9 @@ object Engine {
         }
         if (preset != null && preset.systemPrompt.isNotBlank()) {
             sys.append("## SYSTEM\n").append(preset.systemPrompt).append("\n\n")
+        }
+        if (conv.authorNote.isNotBlank()) {
+            sys.append("## AUTHOR NOTE\n").append(fill(conv.authorNote.trim())).append("\n\n")
         }
         if (before.isNotEmpty()) {
             sys.append("## LORE (before character)\n")
@@ -270,7 +325,7 @@ object Engine {
         }
 
         val sysText = sys.toString().trim()
-        val contextHistory = trimHistoryForContext(history, preset, estimateTokens(sysText) + 64)
+        val contextHistory = trimHistoryForContext(includedHistory, preset, estimateTokens(sysText) + 64)
         val messages = mutableListOf("system" to sysText)
         for (m in contextHistory) {
             val text = if (m.role == "assistant") display(m).trim() else m.content.trim()
@@ -279,7 +334,7 @@ object Engine {
             messages.add(role to text)
         }
         val debug = buildString {
-            appendLine("blocks=${messages.size} worlds=${worlds.size} entries=${entries.size} history=${contextHistory.size}/${history.size}")
+            appendLine("blocks=${messages.size} worlds=${worlds.size} lore=${entries.size} history=${contextHistory.size}/${includedHistory.size} visible=${history.size}")
             appendLine("tokens≈${messages.sumOf { estimateTokens(it.second) }}  memory=${if (memoryFor(conversationId)?.content.isNullOrBlank()) "off" else "on"}")
             if (entries.isNotEmpty()) {
                 appendLine("injected:")
